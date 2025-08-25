@@ -1,0 +1,1 @@
+// Tax Simulator component placeholder
