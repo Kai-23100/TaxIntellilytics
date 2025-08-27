@@ -582,8 +582,10 @@ if "allowables_values" not in st.session_state:
 # ----------------------------
 with tab1:
     st.subheader("📂 Upload Financials (CSV/XLSX) or Connect to QuickBooks (Optional)")
-    qb_df = qb_connect_button()
-    uploaded = st.file_uploader(
+    def qb_connect_button():
+    import pandas as pd
+    # temporary placeholder until actual connection logic is implemented
+    return pd.DataFrame()
         "Upload P&L / Trial Balance (CSV or Excel)",
         type=["csv", "xlsx"],
         help="Upload a Profit & Loss or Trial Balance export from your accounting system",
