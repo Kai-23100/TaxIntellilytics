@@ -10,21 +10,21 @@ import pandas as pd
 import streamlit as st
 import streamlit_authenticator as stauth
 
-# ================================
-# USER LOGIN CONFIGURATION
-# ================================
-
-# Plain usernames and passwords
+# -------------------------------
+# Users and passwords
+# -------------------------------
 usernames = ["user1", "user2"]
 passwords = ["12345", "password"]
 
 # Generate hashed passwords (v0.4.x)
 hashed_passwords = stauth.Hasher(passwords).generate()
 
-# Build user dictionary
+# Build users dictionary
 user_dict = {u: {"name": u, "password": hp} for u, hp in zip(usernames, hashed_passwords)}
 
-# Create authenticator object
+# -------------------------------
+# Create authenticator
+# -------------------------------
 authenticator = stauth.Authenticate(
     {"usernames": user_dict},
     cookie_name="taxintellilytics_cookie",
@@ -32,39 +32,53 @@ authenticator = stauth.Authenticate(
     cookie_expiry_days=1
 )
 
-# ================================
-# LOGIN WIDGET
-# ================================
-name, authentication_status, username = authenticator.login("Login", "main")
+# -------------------------------
+# Login widget
+# -------------------------------
+name, auth_status, username = authenticator.login("Login", "main")
 
-if authentication_status:
+# -------------------------------
+# Main app logic
+# -------------------------------
+if auth_status:
     st.sidebar.write(f"Welcome {name} 👋")
     authenticator.logout("Logout", "sidebar")
 
-    # ================================
-    # SUBSCRIPTION CHECK
-    # ================================
+    # ---------------------------
+    # Subscription check function
+    # ---------------------------
     def check_subscription(user):
-        # Example: Replace with your real subscription logic
-        active_users = ["user1"]  # only user1 has active subscription
+        # Example: only 'user1' has active subscription
+        active_users = ["user1"]
         return user in active_users
 
     if check_subscription(username):
         st.success("✅ Subscription active! Access granted.")
-        
-        # Call your main app module here
-        def show_tax_module():
-            st.write("💰 Tax Computation Module Loaded")
-            # Add your tax computation UI code here
 
-        show_tax_module()
+        # ---------------------------
+        # Tax Module (placeholder)
+        # ---------------------------
+        st.header("💰 Tax Module")
+        st.write("Here you can integrate your full tax computation module.")
+        st.write("Example input and output:")
+
+        # Example data input
+        revenue = st.number_input("Enter Revenue (UGX)", min_value=0, value=1000000)
+        expenses = st.number_input("Enter Expenses (UGX)", min_value=0, value=500000)
+        if st.button("Compute Tax"):
+            profit = revenue - expenses
+            tax_rate = 0.3  # example 30% corporate tax
+            tax_due = profit * tax_rate
+            st.write(f"Profit: UGX {profit:,}")
+            st.write(f"Tax Due (30%): UGX {tax_due:,}")
+
     else:
         st.error("❌ Subscription inactive. Access denied.")
 else:
-    if authentication_status is False:
-        st.error("Username/password is incorrect")
-    elif authentication_status is None:
-        st.warning("Please enter your username and password")
+    if auth_status is False:
+        st.error("Username/password incorrect")
+    else:
+        st.warning("Please enter username and password")
 
 # ================================
 # FLUTTERWAVE PAYMENT
