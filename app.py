@@ -11,29 +11,44 @@ import hashlib
 import streamlit as st
 import requests
 
-# ---------------------------
-# Config: writable DB paths for Streamlit Cloud
-# ---------------------------
-DB_DIR = os.path.join(os.getenv("STREAMLIT_TMP_DIR", "/tmp"), "taxintellilytics")
-os.makedirs(DB_DIR, exist_ok=True)
-USERS_DB = os.path.join(DB_DIR, "users.db")
-HISTORY_DB = os.path.join(DB_DIR, "taxintellilytics_history.sqlite")
-
 import streamlit as st
 import sqlite3
 import hashlib
 from datetime import datetime, timedelta
+import requests
 
 # ---------------------------
-# DB setup
+# Config: writable DB paths
 # ---------------------------
-DB_DIR = "./db"
-USERS_DB = f"{DB_DIR}/users.db"
-HISTORY_DB = f"{DB_DIR}/taxintellilytics_history.sqlite"
-
 import os
-os.makedirs(DB_DIR, exist_ok=True)
 
+DB_DIR = os.path.join(os.getenv("STREAMLIT_TMP_DIR", "/tmp"), "taxintellilytics")
+os.makedirs(DB_DIR, exist_ok=True)
+USERS_DB = os.path.join(DB_DIR, "users.db")
+
+# ---------------------------
+# Subscription Plans
+# ---------------------------
+SUBSCRIPTION_PLANS = {
+    "Basic": {"monthly": 500_000, "annual_discount": 0.1},
+    "Pro": {"monthly": 1_000_000, "annual_discount": 0.1},
+    "Premium": {"monthly": 1_500_000, "annual_discount": 0.1},
+}
+
+# ---------------------------
+# MTN/Airtel Payment Config (placeholders)
+# ---------------------------
+MTN_API_KEY = os.getenv("MTN_API_KEY", "MTN_TEST_KEY")
+AIRTEL_API_KEY = os.getenv("AIRTEL_API_KEY", "AIRTEL_TEST_KEY")
+
+def create_mobile_payment(username, amount, provider="MTN"):
+    """Simulate a payment link / API call for MTN or Airtel."""
+    # For demo purposes, just return a mock payment URL
+    return f"https://{provider.lower()}.payments.test/{username}/{amount}"
+
+# ---------------------------
+# User DB helpers
+# ---------------------------
 def init_user_db():
     conn = sqlite3.connect(USERS_DB)
     c = conn.cursor()
@@ -49,18 +64,13 @@ def init_user_db():
     conn.commit()
     conn.close()
 
-init_user_db()
-
-# ---------------------------
-# Hash helpers
-# ---------------------------
 def rand_salt():
     return hashlib.sha256(os.urandom(16)).hexdigest()[:16]
 
 def hash_with_salt(password: str, salt: str) -> str:
     return hashlib.sha256((salt + password).encode("utf-8")).hexdigest()
 
-def add_user_to_db(username: str, password_hash: str, salt: str, expiry: str = None, plan: str = None):
+def add_user_to_db(username: str, password_hash: str, salt: str, plan: str, expiry: str = None):
     conn = sqlite3.connect(USERS_DB)
     c = conn.cursor()
     c.execute(
@@ -73,20 +83,15 @@ def add_user_to_db(username: str, password_hash: str, salt: str, expiry: str = N
 def get_user_record(username: str):
     conn = sqlite3.connect(USERS_DB)
     c = conn.cursor()
-    c.execute("SELECT username, password_hash, salt, subscription_expiry, plan FROM users WHERE username=?", (username,))
+    c.execute(
+        "SELECT username, password_hash, salt, subscription_expiry, plan FROM users WHERE username=?",
+        (username,)
+    )
     row = c.fetchone()
     conn.close()
     return row
 
-def update_subscription_db(username: str, days: int = 30, plan: str = None):
-    expiry = (datetime.now() + timedelta(days=days)).strftime("%Y-%m-%d")
-    conn = sqlite3.connect(USERS_DB)
-    c = conn.cursor()
-    c.execute("UPDATE users SET subscription_expiry=?, plan=? WHERE username=?", (expiry, plan, username))
-    conn.commit()
-    conn.close()
-
-def check_subscription_db(username: str) -> bool:
+def check_subscription(username: str) -> bool:
     rec = get_user_record(username)
     if rec and rec[3]:
         try:
@@ -96,70 +101,66 @@ def check_subscription_db(username: str) -> bool:
             return False
     return False
 
-# ---------------------------
-# Subscription plans
-# ---------------------------
-SUBSCRIPTION_PLANS = {
-    "Basic": 500_000,
-    "Standard": 1_000_000,
-    "Premium": 1_500_000,
-    "Annual 10% Discount": None  # computed dynamically
-}
+def update_subscription(username: str, days: int):
+    expiry = (datetime.now() + timedelta(days=days)).strftime("%Y-%m-%d")
+    conn = sqlite3.connect(USERS_DB)
+    c = conn.cursor()
+    c.execute("UPDATE users SET subscription_expiry=? WHERE username=?", (expiry, username))
+    conn.commit()
+    conn.close()
+
+# Initialize DB
+init_user_db()
 
 # ---------------------------
-# MTN / Airtel payment placeholder
+# Streamlit UI: Login / Signup
 # ---------------------------
-def create_mobile_payment_link(username, plan, amount):
-    # Placeholder for MTN/Airtel API integration
-    st.info(f"Payment of UGX {amount:,} for {plan} plan would be initiated here.")
-    # In production, return actual payment URL
-    return f"https://mtn-airtel-pay.example.com/{username}/{plan}"
+st.title("💼 TaxIntellilytics Subscription & Login")
 
-# ---------------------------
-# Streamlit UI
-# ---------------------------
-st.title("🧾 TaxIntellilytics Subscription & Login")
+tab1, tab2 = st.tabs(["Login / Renew", "Sign Up"])
 
-tab_login, tab_signup = st.tabs(["Login / Renew", "Sign Up"])
-
-# ---------------------------
-# Login / Renew Tab
-# ---------------------------
-with tab_login:
-    st.subheader("Login / Renew Subscription")
-    
-    with st.form("login_form_tab"):
-        login_username = st.text_input("Username", key="login_username")
-        login_password = st.text_input("Password", type="password", key="login_password")
-        submitted_login = st.form_submit_button("Login")
-
-    if submitted_login:
-        rec = get_user_record(login_username)
-        if rec and hash_with_salt(login_password, rec[2]) == rec[1]:
-            st.success(f"Welcome back, {login_username}!")
-            expiry_status = check_subscription_db(login_username)
-            st.info(f"Subscription Active: {expiry_status}")
+with tab1:
+    st.subheader("Login or Renew Subscription")
+    login_username = st.text_input("Username", key="login_username")
+    login_password = st.text_input("Password", type="password", key="login_password")
+    plan_choice = st.selectbox("Select Plan for Renewal (optional)", list(SUBSCRIPTION_PLANS.keys()), key="renew_plan")
+    if st.button("Login / Renew"):
+        record = get_user_record(login_username)
+        if record:
+            salt = record[2]
+            hashed = hash_with_salt(login_password, salt)
+            if hashed == record[1]:
+                st.success(f"Welcome back, {login_username}!")
+                if plan_choice:
+                    plan_price = SUBSCRIPTION_PLANS[plan_choice]["monthly"]
+                    payment_link = create_mobile_payment(login_username, plan_price)
+                    st.info(f"Click to pay for **{plan_choice}** plan: [Pay Here]({payment_link})")
+                    if st.button("Mark as Paid (demo)"):
+                        update_subscription(login_username, 30)
+                        st.success(f"Subscription renewed! Expiry updated for {login_username}.")
+            else:
+                st.error("Incorrect password.")
         else:
-            st.error("Invalid username or password")
+            st.error("Username not found. Please Sign Up.")
 
-# ---------------------------
-# Sign Up Tab
-# ---------------------------
-with tab_signup:
-    st.subheader("Create New Account")
-    
-    with st.form("signup_form_tab"):
-        new_username = st.text_input("Choose a username", key="signup_username")
-        new_password = st.text_input("Choose a password", type="password", key="signup_password")
-        selected_plan = st.selectbox("Select Plan", list(SUBSCRIPTION_PLANS.keys()), key="signup_plan")
-        submitted_signup = st.form_submit_button("Sign Up & Subscribe")
-
-    if submitted_signup:
-        salt = rand_salt()
-        phash = hash_with_salt(new_password, salt)
-        add_user_to_db(new_username, phash, salt)
-        st.success(f"Account created for {new_username}!")
-        # Here you could call create_mobile_payment_link(new_username, selected_plan, amount)
+with tab2:
+    st.subheader("Sign Up")
+    signup_username = st.text_input("Choose Username", key="signup_username")
+    signup_password = st.text_input("Choose Password", type="password", key="signup_password")
+    signup_plan = st.selectbox("Select Plan", list(SUBSCRIPTION_PLANS.keys()), key="signup_plan")
+    if st.button("Create Account & Pay"):
+        if get_user_record(signup_username):
+            st.error("Username already exists. Choose another.")
+        else:
+            salt = rand_salt()
+            hashed = hash_with_salt(signup_password, salt)
+            plan_price = SUBSCRIPTION_PLANS[signup_plan]["monthly"]
+            payment_link = create_mobile_payment(signup_username, plan_price)
+            st.info(f"Click to pay for **{signup_plan}** plan: [Pay Here]({payment_link})")
+            if st.button("Mark as Paid (demo)", key="signup_mark_paid"):
+                expiry = (datetime.now() + timedelta(days=30)).strftime("%Y-%m-%d")
+                add_user_to_db(signup_username, hashed, salt, signup_plan, expiry)
+                st.success(f"Account created! Subscription active until {expiry}.")
 
 # ---------------------------
 # Tax computation & other utilities (kept as in your original file)
