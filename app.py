@@ -852,4 +852,68 @@ with tab3:
 # ----------------------------
 with tab4:
     st.subheader("📊 Multi-Year History Dashboard")
-   
+    
+    # Load historical tax data
+    data_file = Path("data/tax_history.csv")
+    if data_file.exists():
+        df_history = pd.read_csv(data_file)
+    else:
+        st.warning("Historical data file not found. Please upload 'tax_history.csv' in the 'data/' folder.")
+        df_history = pd.DataFrame(columns=["Client", "Year", "Tax Liability", "Sector", "Revenue"])
+
+    # Filter by client
+    client_filter = st.text_input("Filter by client name:")
+    if client_filter:
+        df_filtered = df_history[df_history["Client"].str.contains(client_filter, case=False, na=False)]
+    else:
+        df_filtered = df_history.copy()
+
+    # Filter by year range
+    min_year = int(df_history["Year"].min()) if not df_history.empty else 2000
+    max_year = int(df_history["Year"].max()) if not df_history.empty else 2025
+    year_range = st.slider("Select year range:", min_value=min_year, max_value=max_year, value=(min_year, max_year))
+    df_filtered = df_filtered[(df_filtered["Year"] >= year_range[0]) & (df_filtered["Year"] <= year_range[1])]
+
+    # Display filtered data
+    st.dataframe(df_filtered.reset_index(drop=True))
+
+    # Plot total tax liability over time
+    if not df_filtered.empty:
+        tax_trend = df_filtered.groupby("Year")["Tax Liability"].sum().reset_index()
+        st.line_chart(tax_trend.rename(columns={"Tax Liability": "Total Tax Liability"}).set_index("Year"))
+
+        # Sector-wise breakdown
+        sector_breakdown = df_filtered.groupby("Sector")["Tax Liability"].sum().sort_values(ascending=False)
+        st.bar_chart(sector_breakdown)
+    else:
+        st.info("No data available for the selected filters.")
+    
+    # Download filtered data
+    csv = df_filtered.to_csv(index=False).encode('utf-8')
+    st.download_button(
+        label="📥 Download filtered data as CSV",
+        data=csv,
+        file_name="filtered_tax_history.csv",
+        mime="text/csv"
+    )
+
+# ----------------------------
+# Footer / App Info
+# ----------------------------
+st.markdown("---")
+st.markdown(
+    """
+    <div style='text-align: center; font-size:12px; color:gray;'>
+        TaxIntellilytics &copy; 2025 | Developed by Walter Hillary Kaijamahe
+    </div>
+    """,
+    unsafe_allow_html=True
+)
+
+# ----------------------------
+# Authentication Logout
+# ----------------------------
+if st.session_state.get("authentication_status"):
+    if st.sidebar.button("Logout"):
+        st.session_state["authentication_status"] = False
+        st.experimental_rerun()
