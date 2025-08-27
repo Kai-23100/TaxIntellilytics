@@ -1,8 +1,3 @@
-# .streamlit/config.toml
-# Minimal, compatible Streamlit config to avoid inotify errors by disabling OS file watchers.
-# Note: disabling file watching means Streamlit will NOT auto-reload when you change files;
-# you must restart the app to pick up code changes.
-
 [server]
 # Disable Streamlit's file watcher to avoid inotify watch limit errors on Linux hosts
 fileWatcherType = "none"
