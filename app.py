@@ -869,17 +869,30 @@ with tab3:
 # ----------------------------
 # Tab 4: Dashboard
 # ----------------------------
+from pathlib import Path
+import pandas as pd
+import streamlit as st
+
 with tab4:
     st.subheader("📊 Multi-Year History Dashboard")
     
     # Load historical tax data
     data_file = Path("data/tax_history.csv")
     if data_file.exists():
-        df_history = pd.read_csv(data_file)
+        try:
+            df_history = pd.read_csv(data_file)
+        except Exception as e:
+            st.error(f"Failed to read historical data: {e}")
+            df_history = pd.DataFrame(columns=["Client", "Year", "Tax Liability", "Sector", "Revenue"])
     else:
         st.warning("Historical data file not found. Please upload 'tax_history.csv' in the 'data/' folder.")
         df_history = pd.DataFrame(columns=["Client", "Year", "Tax Liability", "Sector", "Revenue"])
 
+    # Ensure numeric columns
+    for col in ["Year", "Tax Liability", "Revenue"]:
+        if col in df_history.columns:
+            df_history[col] = pd.to_numeric(df_history[col], errors="coerce")
+    
     # Filter by client
     client_filter = st.text_input("Filter by client name:")
     if client_filter:
