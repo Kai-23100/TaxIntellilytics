@@ -18,43 +18,55 @@ import requests
 # ----------------------------
 st.set_page_config(page_title="TaxIntellilytics — Income Tax (Uganda)", layout="wide")
 
-# ================================
-# USER DATABASE (login + subscription)
-# ================================
-def init_user_db():
-    conn = sqlite3.connect("users.db")
-    c = conn.cursor()
-    c.execute('''CREATE TABLE IF NOT EXISTS users
-                 (username TEXT PRIMARY KEY, password TEXT, subscription_expiry TEXT)''')
-    conn.commit()
-    conn.close()
+# -------------------------------
+# LOGIN & SUBSCRIPTION 
+# -------------------------------
+import streamlit_authenticator as stauth
 
-def add_user(username, password):
-    conn = sqlite3.connect("users.db")
-    c = conn.cursor()
-    c.execute("INSERT OR IGNORE INTO users VALUES (?,?,?)",
-              (username, password, None))
-    conn.commit()
-    conn.close()
+# Demo credentials (replace with your DB later)
+usernames = ["user1", "user2"]
+passwords = ["12345", "password"]
 
-def update_subscription(username, days=30):
-    conn = sqlite3.connect("users.db")
-    c = conn.cursor()
-    expiry = (datetime.now() + timedelta(days=days)).strftime("%Y-%m-%d")
-    c.execute("UPDATE users SET subscription_expiry=? WHERE username=?", (expiry, username))
-    conn.commit()
-    conn.close()
+# Generate hashed passwords
+hashed_passwords = stauth.Hasher(passwords).generate()
 
-def check_subscription(username):
-    conn = sqlite3.connect("users.db")
-    c = conn.cursor()
-    c.execute("SELECT subscription_expiry FROM users WHERE username=?", (username,))
-    result = c.fetchone()
-    conn.close()
-    if result and result[0]:
-        expiry_date = datetime.strptime(result[0], "%Y-%m-%d")
-        return expiry_date >= datetime.now()
-    return False
+# Add users to SQLite DB with hashed passwords
+for u, hp in zip(usernames, hashed_passwords):
+    add_user(u, hp)  # add_user already stores hashed password
+
+# Build dict for authenticator
+user_dict = {u: {"name": u, "password": hp} for u, hp in zip(usernames, hashed_passwords)}
+
+# Create Authenticator
+authenticator = stauth.Authenticate(
+    {"usernames": user_dict},
+    cookie_name="taxintellilytics_cookie",
+    key="taxintellilytics_signature",
+    cookie_expiry_days=1
+)
+
+# Login widget
+name, authentication_status, username = authenticator.login("Login", "main")
+
+if authentication_status == False:
+    st.error("❌ Username/password is incorrect")
+elif authentication_status == None:
+    st.warning("⚠️ Please enter your username and password")
+else:
+    # Logout button in sidebar
+    authenticator.logout("Logout", "sidebar")
+    st.sidebar.write(f"Welcome {name} 👋")
+
+    # Check subscription
+    if check_subscription(username):
+        st.success("✅ Subscription active! Access granted.")
+        show_tax_module()
+    else:
+        st.warning("🚨 You need an active subscription to access TaxIntellilytics.")
+        if st.button("Subscribe with Flutterwave"):
+            link = create_payment_link(username)
+            if link:
+                st.markdown(f"[Click here to pay via Flutterwave]({link})")
 
 # ================================
 # FLUTTERWAVE PAYMENT
