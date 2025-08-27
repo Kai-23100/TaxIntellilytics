@@ -120,10 +120,6 @@ def create_mobile_payment_link(username, plan, amount):
 # ---------------------------
 st.title("🧾 TaxIntellilytics Subscription & Login")
 
-tab1, tab2 = st.tabs(["Login / Renew", "Sign Up"])
-
-tab1, tab2 = st.tabs(["Login / Renew", "Sign Up"])
-
 tab_login, tab_signup = st.tabs(["Login / Renew", "Sign Up"])
 
 # ---------------------------
