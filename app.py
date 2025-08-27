@@ -124,81 +124,46 @@ tab1, tab2 = st.tabs(["Login / Renew", "Sign Up"])
 
 tab1, tab2 = st.tabs(["Login / Renew", "Sign Up"])
 
+tab_login, tab_signup = st.tabs(["Login / Renew", "Sign Up"])
+
 # ---------------------------
 # Login / Renew Tab
 # ---------------------------
-with tab1:
+with tab_login:
     st.subheader("Login / Renew Subscription")
     
-    # Unique form key
-    with st.form("login_form_tab1"):
+    with st.form("login_form_tab"):
         login_username = st.text_input("Username", key="login_username")
         login_password = st.text_input("Password", type="password", key="login_password")
         submitted_login = st.form_submit_button("Login")
 
     if submitted_login:
         rec = get_user_record(login_username)
-        if rec:
-            hashed = hash_with_salt(login_password, rec[2])
-            if hashed == rec[1]:
-                st.success(f"Welcome back, {login_username}!")
-                
-                # Show subscription status
-                plan = rec[4] if rec[4] else "No Plan"
-                expiry_status = check_subscription_db(login_username)
-                st.info(f"Plan: {plan}, Active: {expiry_status}")
-
-                # Upgrade / renew button
-                if st.button("Upgrade / Renew Subscription", key="upgrade_btn"):
-                    st.session_state["upgrade_user"] = login_username
-                    st.experimental_rerun()
-            else:
-                st.error("Incorrect password")
+        if rec and hash_with_salt(login_password, rec[2]) == rec[1]:
+            st.success(f"Welcome back, {login_username}!")
+            expiry_status = check_subscription_db(login_username)
+            st.info(f"Subscription Active: {expiry_status}")
         else:
-            st.error("User not found")
-
-    # Upgrade / Renew flow (separate form with unique key)
-    if "upgrade_user" in st.session_state:
-        upgrade_user = st.session_state["upgrade_user"]
-        with st.form(f"upgrade_form_{upgrade_user}"):
-            st.markdown(f"### Upgrade / Renew for {upgrade_user}")
-            selected_plan = st.selectbox("Select Plan", list(SUBSCRIPTION_PLANS.keys()), key="upgrade_plan")
-            amount = SUBSCRIPTION_PLANS[selected_plan] or int(1_500_000 * 12 * 0.9)  # Handle annual
-            submitted_upgrade = st.form_submit_button("Proceed to Payment")
-            
-            if submitted_upgrade:
-                payment_url = create_mobile_payment_link(upgrade_user, selected_plan, amount)
-                st.success(f"[Click here to pay]({payment_url})")
-                # Auto-activate for demo
-                update_subscription_db(upgrade_user, days=30, plan=selected_plan)
-                st.success(f"Subscription for {selected_plan} activated!")
+            st.error("Invalid username or password")
 
 # ---------------------------
-# Sign-Up Tab
+# Sign Up Tab
 # ---------------------------
-with tab2:
-    st.subheader("Create a New Account")
-    with st.form("signup_form"):
-        signup_username = st.text_input("Username", key="signup_username")
-        signup_password = st.text_input("Password", type="password", key="signup_password")
-        signup_plan = st.selectbox("Select Subscription Plan", list(SUBSCRIPTION_PLANS.keys()), key="signup_plan")
-        submitted_signup = st.form_submit_button("Sign Up & Pay")
+with tab_signup:
+    st.subheader("Create New Account")
+    
+    with st.form("signup_form_tab"):
+        new_username = st.text_input("Choose a username", key="signup_username")
+        new_password = st.text_input("Choose a password", type="password", key="signup_password")
+        selected_plan = st.selectbox("Select Plan", list(SUBSCRIPTION_PLANS.keys()), key="signup_plan")
+        submitted_signup = st.form_submit_button("Sign Up & Subscribe")
 
     if submitted_signup:
-        if get_user_record(signup_username):
-            st.error("Username already exists")
-        else:
-            salt = rand_salt()
-            phash = hash_with_salt(signup_password, salt)
-            amount = SUBSCRIPTION_PLANS[signup_plan]
-            if signup_plan == "Annual 10% Discount":
-                amount = int(1_500_000 * 12 * 0.9)
-            add_user_to_db(signup_username, phash, salt, expiry=None, plan=signup_plan)
-            payment_url = create_mobile_payment_link(signup_username, signup_plan, amount)
-            st.success(f"Account created! [Click here to pay]({payment_url})")
-            # For demo, auto-activate
-            update_subscription_db(signup_username, days=30, plan=signup_plan)
-            st.success(f"Subscription for {signup_plan} activated!")
+        salt = rand_salt()
+        phash = hash_with_salt(new_password, salt)
+        add_user_to_db(new_username, phash, salt)
+        st.success(f"Account created for {new_username}!")
+        # Here you could call create_mobile_payment_link(new_username, selected_plan, amount)
 
 # ---------------------------
 # Tax computation & other utilities (kept as in your original file)
