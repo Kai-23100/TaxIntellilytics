@@ -1,7 +1,7 @@
 [server]
 headless = true
 enableCORS = false
-port = $PORT
+# port = $PORT  # Remove this line for Streamlit Cloud
 
 [theme]
 primaryColor = "#4CAF50"
