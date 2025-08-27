@@ -582,10 +582,18 @@ if "allowables_values" not in st.session_state:
 # ----------------------------
 with tab1:
     st.subheader("📂 Upload Financials (CSV/XLSX) or Connect to QuickBooks (Optional)")
+
+    # Simulated QuickBooks connection button
     def qb_connect_button():
-    import pandas as pd
-    # temporary placeholder until actual connection logic is implemented
-    return pd.DataFrame()
+        import pandas as pd
+        # Temporary placeholder until actual connection logic is implemented
+        return pd.DataFrame()  # empty DataFrame as placeholder
+
+    # Call the QuickBooks connect button (simulated)
+    qb_df = qb_connect_button()
+
+    # File uploader
+    uploaded = st.file_uploader(
         "Upload P&L / Trial Balance (CSV or Excel)",
         type=["csv", "xlsx"],
         help="Upload a Profit & Loss or Trial Balance export from your accounting system",
@@ -593,8 +601,12 @@ with tab1:
     )
 
     df = None
-    if qb_df is not None:
+
+    # Prefer QuickBooks data if available
+    if qb_df is not None and not qb_df.empty:
         df = qb_df
+
+    # Parse uploaded file if provided
     if uploaded is not None:
         uploaded_bytes = uploaded.getvalue()
         try:
@@ -603,16 +615,21 @@ with tab1:
             st.error(f"Failed to parse file: {e}")
             df = None
 
+    # Display data preview
     if df is not None and not df.empty:
         st.session_state["pl_df"] = df
         st.write("### Preview (first 50 rows)")
         st.dataframe(df.head(50), use_container_width=True)
+
         if st.button("Auto-Map P&L (fast)", key="t1_btn_automap"):
             df_json = df.head(10000).to_json()
             revenue, cogs, opex, other_income, other_expenses = auto_map_pl_cached(df_json)
             st.session_state["mapped_values"] = {
-                "revenue": revenue, "cogs": cogs, "opex": opex,
-                "other_income": other_income, "other_expenses": other_expenses
+                "revenue": revenue,
+                "cogs": cogs,
+                "opex": opex,
+                "other_income": other_income,
+                "other_expenses": other_expenses
             }
             st.success("Auto-map completed — check P&L Mapping tab to adjust/confirm.")
     else:
