@@ -529,7 +529,7 @@ with st.sidebar:
     tax_year = st.number_input("Year", min_value=2000, max_value=datetime.now().year, value=datetime.now().year, step=1, key="sb_tax_year")
     period_label = st.text_input("Period label (e.g., FY2024/25)", value=f"FY{tax_year}", key="sb_period_label")
 
-    # Define individual progressive brackets internally (hidden from UI)
+  # Define individual progressive brackets internally (hidden from UI)
 individual_brackets = [
     {"threshold": 0.0, "rate": 0.0, "fixed": 0.0},
     {"threshold": 2820000.0, "rate": 0.1, "fixed": 0.0},
@@ -537,11 +537,8 @@ individual_brackets = [
     {"threshold": 4920000.0, "rate": 0.3, "fixed": 360000.0},
     {"threshold": 10000000.0, "rate": 0.4, "fixed": 1830000.0}
 ]
-    brackets_json = st.text_area("Brackets JSON", value=json.dumps(default_brackets, indent=2), height=180, key="sb_brackets_json")
-    try:
-        individual_brackets = sorted(json.loads(brackets_json), key=lambda x: x["threshold"])
-    except Exception:
-        individual_brackets = default_brackets
+
+# No need for st.text_area or JSON editing – brackets are fixed internally
 
     st.markdown("### Company Rate")
     company_rate = st.number_input("Company Income Tax Rate", min_value=0.0, max_value=1.0, value=0.30, step=0.01, key="sb_company_rate")
