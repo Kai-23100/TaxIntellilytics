@@ -921,21 +921,45 @@ with tab3:
             st.success("Saved to history.")
 
 # ----------------------------
+# History DB configuration
+# ----------------------------
+HISTORY_DB = "/tmp/taxintellilytics/taxintellilytics_history.sqlite"
+
+# ----------------------------
+# Cached helper to load tax history
+# ----------------------------
+@st.cache_data(ttl=600)
+def load_history_cached(client_filter: str = "") -> pd.DataFrame:
+    """Load tax history from DB, optionally filter by client name"""
+    try:
+        with sqlite3.connect(HISTORY_DB) as conn:
+            df = pd.read_sql_query(
+                "SELECT * FROM income_tax_history ORDER BY year DESC, created_at DESC", conn
+            )
+        if client_filter and not df.empty:
+            df = df[df["client_name"].str.contains(client_filter, case=False, na=False)]
+        return df
+    except Exception as e:
+        st.error(f"Failed to load history: {e}")
+        return pd.DataFrame()
+
+# ----------------------------
 # Tab 4: Dashboard
 # ----------------------------
 with tab4:
     st.subheader("📊 Multi-Year History Dashboard")
     client_filter = st.text_input("Filter by client name (optional)", "", key="t4_client_filter")
-    
-    # Make sure this call happens AFTER the function is defined
+
+    # Load history
     hist = load_history_cached(client_filter)
-    
+
     if hist.empty:
         st.info("No saved history yet.")
     else:
         st.write("Showing latest 200 records (use filter to narrow).")
         st.dataframe(hist.head(200), use_container_width=True)
 
+        # Net Tax by Year
         st.markdown("#### Net Tax by Year")
         pivot = hist.groupby(["year"])["net_tax_payable"].sum().reset_index()
         if not pivot.empty:
@@ -943,10 +967,10 @@ with tab4:
                 pivot.rename(columns={"net_tax_payable": "Net Tax Payable"}).set_index("year")
             )
 
+        # Taxable Income vs Gross Tax (latest 30)
         st.markdown("#### Taxable Income vs Gross Tax (latest 30)")
-        if len(hist) > 0:
-            chart_df = hist.head(30).set_index("created_at")[["taxable_income", "gross_tax"]]
-            st.bar_chart(chart_df)
+        chart_df = hist.head(30).set_index("created_at")[["taxable_income", "gross_tax"]]
+        st.bar_chart(chart_df)
 
 # ----------------------------
 # Tab 5: Export & URA Forms
