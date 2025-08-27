@@ -1,8 +1,11 @@
 [server]
 headless = true
-port = 8501
 enableCORS = false
-fileWatcherType = "none"
+port = 8501
+maxUploadSize = 200
+
+[fileWatcher]
+watcherType = "none"
 
 [theme]
 primaryColor = "#4CAF50"
@@ -10,9 +13,3 @@ backgroundColor = "#F7F7F7"
 secondaryBackgroundColor = "#EAEAEA"
 textColor = "#000000"
 font = "sans serif"
-
-[logger]
-level = "info"
-
-[browser]
-gatherUsageStats = false
