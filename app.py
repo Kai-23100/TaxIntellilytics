@@ -925,12 +925,11 @@ with tab3:
 # ----------------------------
 with tab4:
     st.subheader("📊 Multi-Year History Dashboard")
-
-    client_filter = st.text_input(
-        "Filter by client name (optional)", "", key="t4_client_filter"
-    )
+    client_filter = st.text_input("Filter by client name (optional)", "", key="t4_client_filter")
+    
+    # Make sure this call happens AFTER the function is defined
     hist = load_history_cached(client_filter)
-
+    
     if hist.empty:
         st.info("No saved history yet.")
     else:
