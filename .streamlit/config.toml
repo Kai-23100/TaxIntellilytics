@@ -1,10 +1,21 @@
-# Streamlit configuration file for TaxIntellilytics
-# Forces polling to avoid inotify watch limit errors
+# .streamlit/config.toml
+# Streamlit configuration for TaxIntellilytics
+# Forces polling to prevent inotify watch limit errors on all platforms
 
 [server]
-# Use polling instead of inotify for file watching
+# Use polling for file watching instead of inotify
 fileWatcherType = "poll"
 
-# Optional: Allow external access (for cloud deployments)
+# Allow external access (for cloud deployments)
 enableCORS = false
 enableXsrfProtection = true
+
+# Optional: set port if needed (uncomment and adjust)
+# port = 8501
+
+[global]
+# Keep auto-reload enabled (hot-reload works with polling)
+runOnSave = true
+
+# Optional: logging level
+# logLevel = "info"
