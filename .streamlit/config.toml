@@ -1,18 +1,15 @@
 [server]
-headless = true
-port = 8501
-enableCORS = false
-runOnSave = false
+fileWatcherType = "none"        # Disables Streamlit's file watcher (fixes the inotify limit issue)
 
 [browser]
-gatherUsageStats = false
+gatherUsageStats = false         # Disables sending usage stats to Streamlit
 
 [theme]
-primaryColor = "#4CAF50"
-backgroundColor = "#F7F7F7"
-secondaryBackgroundColor = "#EAEAEA"
-textColor = "#000000"
-font = "sans serif"
+primaryColor = "#4CAF50"        # Your main accent color (green)
+backgroundColor = "#F7F7F7"     # App background color
+secondaryBackgroundColor = "#EAEAEA"  # Secondary background (cards, panels)
+textColor = "#000000"            # Text color
+font = "sans serif"              # Font style
 
 [logger]
-level = "info"
+level = "info"                   # Logging level (info is standard; change to "error" to reduce logs)
