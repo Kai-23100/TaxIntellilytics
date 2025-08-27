@@ -9,35 +9,22 @@ import numpy as np
 import pandas as pd
 import streamlit as st
 import streamlit_authenticator as stauth
-import requests
 
-# Login + Subscription + Tax History Module
+# ================================
+# USER LOGIN CONFIGURATION
+# ================================
 
-# ----------------------------
-# Page config
-# ----------------------------
-st.set_page_config(page_title="TaxIntellilytics — Income Tax (Uganda)", layout="wide")
-
-# -------------------------------
-# LOGIN & SUBSCRIPTION 
-# -------------------------------
-import streamlit_authenticator as stauth
-
-# Demo credentials (replace with your DB later)
+# Plain usernames and passwords
 usernames = ["user1", "user2"]
 passwords = ["12345", "password"]
 
-# Generate hashed passwords
+# Generate hashed passwords (v0.4.x)
 hashed_passwords = stauth.Hasher(passwords).generate()
 
-# Add users to SQLite DB with hashed passwords
-for u, hp in zip(usernames, hashed_passwords):
-    add_user(u, hp)  # add_user already stores hashed password
-
-# Build dict for authenticator
+# Build user dictionary
 user_dict = {u: {"name": u, "password": hp} for u, hp in zip(usernames, hashed_passwords)}
 
-# Create Authenticator
+# Create authenticator object
 authenticator = stauth.Authenticate(
     {"usernames": user_dict},
     cookie_name="taxintellilytics_cookie",
@@ -45,28 +32,39 @@ authenticator = stauth.Authenticate(
     cookie_expiry_days=1
 )
 
-# Login widget
+# ================================
+# LOGIN WIDGET
+# ================================
 name, authentication_status, username = authenticator.login("Login", "main")
 
-if authentication_status == False:
-    st.error("❌ Username/password is incorrect")
-elif authentication_status == None:
-    st.warning("⚠️ Please enter your username and password")
-else:
-    # Logout button in sidebar
-    authenticator.logout("Logout", "sidebar")
+if authentication_status:
     st.sidebar.write(f"Welcome {name} 👋")
+    authenticator.logout("Logout", "sidebar")
 
-    # Check subscription
+    # ================================
+    # SUBSCRIPTION CHECK
+    # ================================
+    def check_subscription(user):
+        # Example: Replace with your real subscription logic
+        active_users = ["user1"]  # only user1 has active subscription
+        return user in active_users
+
     if check_subscription(username):
         st.success("✅ Subscription active! Access granted.")
+        
+        # Call your main app module here
+        def show_tax_module():
+            st.write("💰 Tax Computation Module Loaded")
+            # Add your tax computation UI code here
+
         show_tax_module()
     else:
-        st.warning("🚨 You need an active subscription to access TaxIntellilytics.")
-        if st.button("Subscribe with Flutterwave"):
-            link = create_payment_link(username)
-            if link:
-                st.markdown(f"[Click here to pay via Flutterwave]({link})")
+        st.error("❌ Subscription inactive. Access denied.")
+else:
+    if authentication_status is False:
+        st.error("Username/password is incorrect")
+    elif authentication_status is None:
+        st.warning("Please enter your username and password")
 
 # ================================
 # FLUTTERWAVE PAYMENT
