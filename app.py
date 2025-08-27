@@ -34,15 +34,20 @@ SUBSCRIPTION_PLANS = {
 def init_user_db():
     conn = sqlite3.connect(USERS_DB)
     c = conn.cursor()
+    # Create table if not exists
     c.execute('''
         CREATE TABLE IF NOT EXISTS users (
             username TEXT PRIMARY KEY,
             password_hash TEXT,
             salt TEXT,
-            subscription_expiry TEXT,
-            plan TEXT
+            subscription_expiry TEXT
         );
     ''')
+    # Ensure 'plan' column exists
+    c.execute("PRAGMA table_info(users)")
+    columns = [info[1] for info in c.fetchall()]
+    if "plan" not in columns:
+        c.execute("ALTER TABLE users ADD COLUMN plan TEXT")
     conn.commit()
     conn.close()
 
