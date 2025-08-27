@@ -876,7 +876,7 @@ import streamlit as st
 with tab4:
     st.subheader("📊 Multi-Year History Dashboard")
     
-    # Load historical tax data
+    # --- Historical Tax Data ---
     data_file = Path("data/tax_history.csv")
     if data_file.exists():
         try:
@@ -928,6 +928,27 @@ with tab4:
         file_name="filtered_tax_history.csv",
         mime="text/csv"
     )
+    
+    # --- Export & URA Forms ---
+    st.subheader("📝 Export & URA Forms")
+    st.info("Generate URA-compliant forms and export reports here.")
+    
+    with st.expander("📄 URA Forms Options"):
+        st.write("Placeholder for: VAT Returns, PAYE Returns, Corporate Tax Returns, etc.")
+        # Example buttons
+        st.button("Generate VAT Form")
+        st.button("Generate PAYE Form")
+        st.button("Generate Corporate Tax Form")
+    
+    # --- Audit & Controls ---
+    st.subheader("🛡️ Audit & Controls")
+    st.info("Monitor controls, audit logs, and data integrity.")
+    
+    with st.expander("🔍 Audit Options"):
+        st.write("Placeholder for: Control checks, anomaly detection, and audit reports.")
+        st.button("Run Control Checks")
+        st.button("Run Anomaly Detection")
+        st.button("Export Audit Report")
 
 # ----------------------------
 # Footer / App Info
