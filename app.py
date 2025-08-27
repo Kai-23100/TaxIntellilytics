@@ -866,121 +866,235 @@ with tab3:
             load_history_cached.clear()  # refresh cache
             st.success("Saved to history.")
 
-# ==============================
-# TAB 4 – DASHBOARD
-# ==============================
-elif selected_tab == "Dashboard":
-    st.subheader("📊 Tax Dashboard")
+# ----------------------------
+# Tab 4: Dashboard
+# ----------------------------
+with tab4:
+    st.subheader("📊 Multi-Year History Dashboard")
 
-    # Load history (make sure load_history_cached is defined earlier in the script)
-    history = load_history_cached()
+    client_filter = st.text_input(
+        "Filter by client name (optional)", "", key="t4_client_filter"
+    )
+    hist = load_history_cached(client_filter)
 
-    if history.empty:
-        st.info("No computation history found. Run a computation first.")
+    if hist.empty:
+        st.info("No saved history yet.")
     else:
-        # Metrics overview
-        st.metric("Total Computations", len(history))
-        st.metric("Total Declared Income", f"{history['income'].sum():,.0f}")
-        st.metric("Total Tax Paid", f"{history['tax'].sum():,.0f}")
+        st.write("Showing latest 200 records (use filter to narrow).")
+        st.dataframe(hist.head(200), use_container_width=True)
 
-        # Table view
-        st.dataframe(history)
+        st.markdown("#### Net Tax by Year")
+        pivot = hist.groupby(["year"])["net_tax_payable"].sum().reset_index()
+        if not pivot.empty:
+            st.line_chart(
+                pivot.rename(columns={"net_tax_payable": "Net Tax Payable"}).set_index("year")
+            )
 
-        # Plotting
-        st.line_chart(history.set_index("timestamp")["tax"])
+        st.markdown("#### Taxable Income vs Gross Tax (latest 30)")
+        if len(hist) > 0:
+            chart_df = hist.head(30).set_index("created_at")[["taxable_income", "gross_tax"]]
+            st.bar_chart(chart_df)
 
-        # Allow export
-        csv = history.to_csv(index=False)
-        st.download_button("Download History (CSV)", csv, "history.csv", "text/csv")
+# ----------------------------
+# Tab 5: Export & URA Forms
+# ----------------------------
+with tab5:
+    st.subheader("📤 URA Return CSV / Excel (DT-2001 / DT-2002) with Validation")
 
-# ==============================
-# TAB 5 – EXPORT & URA FORMS
-# ==============================
-elif selected_tab == "Export & URA Forms":
-    st.subheader("📑 Export Returns")
+    last = st.session_state.get("last_computation", {})
+    suggested_client = last.get("client_name", "")
+    suggested_year = int(last.get("year", tax_year))
+    suggested_period = last.get("period", period_label)
+    suggested_taxable = float(last.get("taxable_income", 0.0))
+    suggested_gross = float(last.get("gross_tax", 0.0))
 
-    # Re-use computation results stored in session_state
-    if "tax_result" not in st.session_state:
-        st.warning("Run a computation first before exporting.")
+    st.markdown("Fill the required fields to build a URA-compliant CSV/Excel.")
+
+    form_code = "DT-2002" if taxpayer_type.lower() == "company" else "DT-2001"
+    st.info(f"Selected Form: **{form_code}**")
+
+    TIN_input = st.text_input("TIN (required)", value=last.get("TIN", ""), key="t5_tin_input")
+
+    if form_code == "DT-2001":
+        # ---- Individuals ----
+        taxpayer_name = st.text_input("Taxpayer Name", value=suggested_client, key="t5_taxpayer_name")
+        business_income = st.number_input("Business Income (UGX)", min_value=0.0, value=suggested_taxable, format="%.2f", key="t5_biz_income")
+        allowable_deductions = st.number_input("Allowable Deductions (UGX)", min_value=0.0, value=float(last.get("total_allowables", 0.0)), format="%.2f", key="t5_allowable_deductions")
+        capital_allowances_f = st.number_input("Capital Allowances (UGX)", min_value=0.0, value=float(last.get("capital_allowances", 0.0)), format="%.2f", key="t5_cap_allowances")
+        exemptions_f = st.number_input("Exemptions (UGX)", min_value=0.0, value=float(last.get("exemptions", 0.0)), format="%.2f", key="t5_exemptions")
+        gross_tax_f = st.number_input("Gross Tax (UGX)", min_value=0.0, value=suggested_gross, format="%.2f", key="t5_gross_tax")
+        wht_f = st.number_input("WHT Credits (UGX)", min_value=0.0, value=float(last.get("credits_wht", 0.0)), format="%.2f", key="t5_wht")
+        foreign_f = st.number_input("Foreign Tax Credit (UGX)", min_value=0.0, value=float(last.get("credits_foreign", 0.0)), format="%.2f", key="t5_ftc")
+        rebates_f = st.number_input("Rebates (UGX)", min_value=0.0, value=float(last.get("rebates", 0.0)), format="%.2f", key="t5_rebates")
+
+        payload = {
+            "TIN": TIN_input,
+            "Taxpayer Name": taxpayer_name,
+            "Period": suggested_period,
+            "Year": suggested_year,
+            "Business Income (UGX)": business_income,
+            "Allowable Deductions (UGX)": allowable_deductions,
+            "Capital Allowances (UGX)": capital_allowances_f,
+            "Exemptions (UGX)": exemptions_f,
+            "Taxable Income (UGX)": max(0.0, business_income - allowable_deductions - capital_allowances_f - exemptions_f),
+            "Gross Tax (UGX)": gross_tax_f,
+            "WHT Credits (UGX)": wht_f,
+            "Foreign Tax Credit (UGX)": foreign_f,
+            "Rebates (UGX)": rebates_f,
+            "Net Tax Payable (UGX)": max(0.0, gross_tax_f - wht_f - foreign_f - rebates_f),
+        }
+
     else:
-        result = st.session_state["tax_result"]
+        # ---- Companies ----
+        entity_name = st.text_input("Entity Name", value=suggested_client, key="t5_entity_name")
+        gross_turnover = st.number_input("Gross Turnover (UGX)", min_value=0.0, value=float(last.get("revenue", 0.0)), format="%.2f", key="t5_gturnover")
+        cogs_f = st.number_input("COGS (UGX)", min_value=0.0, value=float(last.get("cogs", 0.0)), format="%.2f", key="t5_cogs")
+        opex_f = st.number_input("Operating Expenses (UGX)", min_value=0.0, value=float(last.get("opex", 0.0)), format="%.2f", key="t5_opex")
+        other_income_f = st.number_input("Other Income (UGX)", min_value=0.0, value=float(last.get("other_income", 0.0)), format="%.2f", key="t5_oincome")
+        other_expenses_f = st.number_input("Other Expenses (UGX)", min_value=0.0, value=float(last.get("other_expenses", 0.0)), format="%.2f", key="t5_oexpense")
+        capital_allowances_f = st.number_input("Capital Allowances (UGX)", min_value=0.0, value=float(last.get("capital_allowances", 0.0)), format="%.2f", key="t5_cap_allowances_c")
+        exemptions_f = st.number_input("Exemptions (UGX)", min_value=0.0, value=float(last.get("exemptions", 0.0)), format="%.2f", key="t5_exemptions_c")
+        gross_tax_f = st.number_input("Gross Tax (UGX)", min_value=0.0, value=suggested_gross, format="%.2f", key="t5_gross_tax_c")
+        wht_f = st.number_input("WHT Credits (UGX)", min_value=0.0, value=float(last.get("credits_wht", 0.0)), format="%.2f", key="t5_wht_c")
+        foreign_f = st.number_input("Foreign Tax Credit (UGX)", min_value=0.0, value=float(last.get("credits_foreign", 0.0)), format="%.2f", key="t5_ftc_c")
+        rebates_f = st.number_input("Rebates (UGX)", min_value=0.0, value=float(last.get("rebates", 0.0)), format="%.2f", key="t5_rebates_c")
 
-        # Example: validate and build return (stub – define earlier in script)
-        if st.button("Generate DT-2001 Form"):
-            try:
-                return_df = validate_and_build_return(result, form="DT2001")
-                st.success("DT-2001 Return generated successfully!")
+        taxable_income_calc = max(0.0, (gross_turnover + other_income_f) - (cogs_f + opex_f + other_expenses_f) - capital_allowances_f - exemptions_f)
 
-                st.dataframe(return_df)
+        payload = {
+            "TIN": TIN_input,
+            "Entity Name": entity_name,
+            "Period": suggested_period,
+            "Year": suggested_year,
+            "Gross Turnover (UGX)": gross_turnover,
+            "COGS (UGX)": cogs_f,
+            "Operating Expenses (UGX)": opex_f,
+            "Other Income (UGX)": other_income_f,
+            "Other Expenses (UGX)": other_expenses_f,
+            "Capital Allowances (UGX)": capital_allowances_f,
+            "Exemptions (UGX)": exemptions_f,
+            "Taxable Income (UGX)": taxable_income_calc,
+            "Gross Tax (UGX)": gross_tax_f,
+            "WHT Credits (UGX)": wht_f,
+            "Foreign Tax Credit (UGX)": foreign_f,
+            "Rebates (UGX)": rebates_f,
+            "Net Tax Payable (UGX)": max(0.0, gross_tax_f - wht_f - foreign_f - rebates_f),
+        }
 
-                # Allow download
-                csv = return_df.to_csv(index=False)
-                st.download_button("Download DT-2001", csv, "DT2001.csv", "text/csv")
-            except Exception as e:
-                st.error(f"Error: {e}")
-
-        if st.button("Generate DT-2002 Form"):
-            try:
-                return_df = validate_and_build_return(result, form="DT2002")
-                st.success("DT-2002 Return generated successfully!")
-
-                st.dataframe(return_df)
-
-                csv = return_df.to_csv(index=False)
-                st.download_button("Download DT-2002", csv, "DT2002.csv", "text/csv")
-            except Exception as e:
-                st.error(f"Error: {e}")
-
-# ==============================
-# TAB 6 – AUDIT & CONTROLS
-# ==============================
-elif selected_tab == "Audit & Controls":
-    st.subheader("🧾 Audit & Control Accounts")
-
-    uploaded_file = st.file_uploader("Upload Trial Balance (CSV or Excel)", type=["csv", "xlsx"])
-
-    if uploaded_file:
+    if st.button("✅ Validate & Build CSV / Excel", key="t5_btn_build"):
         try:
-            if uploaded_file.name.endswith(".csv"):
-                df = pd.read_csv(uploaded_file)
-            else:
-                df = pd.read_excel(uploaded_file)
+            df_return = validate_and_build_return(form_code, payload)
+            st.success("Validation passed. Download your URA return below.")
 
-            st.write("Preview of Uploaded Trial Balance:")
-            st.dataframe(df.head())
+            csv_bytes = df_return.to_csv(index=False).encode("utf-8")
+            st.download_button(
+                label="📥 Download URA Return CSV",
+                data=csv_bytes,
+                file_name=f"{form_code}_{payload.get('Year')}_{payload.get('TIN','')}.csv",
+                mime="text/csv",
+                key="t5_dl_csv"
+            )
 
-            # Check required columns
-            required_cols = {"Account", "Debit", "Credit"}
-            if not required_cols.issubset(df.columns):
-                st.error("Trial Balance must include: Account, Debit, Credit")
-            else:
-                # Summaries
-                total_debit = df["Debit"].sum()
-                total_credit = df["Credit"].sum()
-                st.metric("Total Debit", f"{total_debit:,.0f}")
-                st.metric("Total Credit", f"{total_credit:,.0f}")
+            buffer = io.BytesIO()
+            with pd.ExcelWriter(buffer, engine="xlsxwriter") as writer:
+                df_return.to_excel(writer, index=False, sheet_name=form_code)
 
-                if abs(total_debit - total_credit) < 1e-2:
-                    st.success("Trial Balance is balanced ✅")
-                else:
-                    st.error("Trial Balance is not balanced ❌")
+            st.download_button(
+                label="📥 Download URA Return Excel",
+                data=buffer.getvalue(),
+                file_name=f"{form_code}_{payload.get('Year')}_{payload.get('TIN','')}.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                key="t5_dl_xlsx"
+            )
 
-                # Reconcile key control accounts
-                control_accounts = ["Cash", "Bank", "Trade Debtors", "Trade Creditors", "Tax Payable"]
-                df_controls = df[df["Account"].isin(control_accounts)]
-                if not df_controls.empty:
-                    st.write("Control Accounts Check:")
-                    st.dataframe(df_controls)
-
-                # Profit and Loss check (stub logic)
-                try:
-                    p_and_l = total_credit - total_debit
-                    st.info(f"Derived P&L: {p_and_l:,.0f}")
-                except Exception as e:
-                    st.warning(f"Could not compute P&L: {e}")
+            st.dataframe(df_return, use_container_width=True)
 
         except Exception as e:
-            st.error(f"Upload error: {e}")
+            st.error(f"Validation failed: {e}")
+
+# ----------------------------
+# Tab 6: Audit & Controls
+# ----------------------------
+with tab6:
+    st.subheader("🔎 Audit & Control Accounts")
+    st.markdown("""
+        Upload a **Trial Balance** (TB). This tool will:
+        1) Check TB integrity (Debits = Credits),
+        2) Match & test sign expectations for control accounts (editable map in sidebar),
+        3) Reconcile TB-derived P&L vs your mapped P&L values (materiality in sidebar).
+    """)
+
+    tb_file = st.file_uploader("Upload Trial Balance (CSV/Excel)", type=["csv", "xlsx"], key="tb_upload")
+
+    # Materiality threshold input
+    materiality = st.sidebar.number_input(
+        "Materiality Threshold (UGX)", min_value=0.0, value=1000000.0, step=100000.0, key="materiality_threshold"
+    )
+
+    # Control accounts map
+    st.sidebar.markdown("### 🔧 Control Accounts Map")
+    control_accounts = {
+        "Cash": "Debit",
+        "Bank": "Debit",
+        "Accounts Receivable": "Debit",
+        "Accounts Payable": "Credit",
+        "Revenue": "Credit",
+        "Expenses": "Debit"
+    }
+
+    # Editable map
+    user_control_map = {}
+    for i, (acc, expected_sign) in enumerate(control_accounts.items()):
+        user_choice = st.sidebar.selectbox(
+            f"{acc} Expected Sign", ["Debit", "Credit"],
+            index=0 if expected_sign == "Debit" else 1,
+            key=f"ctrl_{acc}_{i}"
+        )
+        user_control_map[acc] = user_choice
+
+    if tb_file:
+        try:
+            if tb_file.name.endswith(".csv"):
+                tb_df = pd.read_csv(tb_file)
+            else:
+                tb_df = pd.read_excel(tb_file)
+
+            st.write("✅ Trial Balance Preview:")
+            st.dataframe(tb_df.head())
+
+            # TB integrity check
+            total_debits = tb_df["Debit"].sum() if "Debit" in tb_df.columns else 0
+            total_credits = tb_df["Credit"].sum() if "Credit" in tb_df.columns else 0
+
+            if np.isclose(total_debits, total_credits):
+                st.success(f"Trial Balance is balanced. Debits = {total_debits}, Credits = {total_credits}")
+            else:
+                st.error(f"Trial Balance is NOT balanced! Debits = {total_debits}, Credits = {total_credits}")
+
+            # Control accounts check
+            st.markdown("### Control Accounts Sign Check")
+            for acc, expected_sign in user_control_map.items():
+                if acc in tb_df["Account"].values:
+                    acc_balance = tb_df.loc[tb_df["Account"] == acc, "Debit"].sum() - tb_df.loc[tb_df["Account"] == acc, "Credit"].sum()
+                    sign = "Debit" if acc_balance >= 0 else "Credit"
+                    if sign == expected_sign:
+                        st.success(f"{acc}: OK ({sign})")
+                    else:
+                        st.warning(f"{acc}: Mismatch! Expected {expected_sign}, Found {sign}")
+                else:
+                    st.info(f"{acc}: Account not in TB")
+
+            # P&L reconciliation
+            st.markdown("### P&L Reconciliation")
+            tb_pl_total = tb_df.loc[tb_df["Account"].isin(["Revenue", "Expenses"]), "Debit"].sum() - tb_df.loc[tb_df["Account"].isin(["Revenue", "Expenses"]), "Credit"].sum()
+
+            if abs(tb_pl_total) <= materiality:
+                st.success(f"P&L within materiality ({tb_pl_total} UGX)")
+            else:
+                st.warning(f"P&L outside materiality ({tb_pl_total} UGX)")
+
+        except Exception as e:
+            st.error(f"Error processing TB: {e}")
 
 # ----------------------------
 # Footer / App Info
