@@ -518,37 +518,60 @@ else:
             if st.button("Simulate Subscribe (demo)"):
                 update_subscription_db(cur_user, days=365)
                 st.experimental_rerun()
-
               
 # ----------------------------
 # Sidebar configuration
 # ----------------------------
 with st.sidebar:
     st.header("⚙️ Configuration")
-    taxpayer_type = st.selectbox("Taxpayer Type", ["company", "individual"], key="sb_taxpayer_type")
-    tax_year = st.number_input("Year", min_value=2000, max_value=datetime.now().year, value=datetime.now().year, step=1, key="sb_tax_year")
-    period_label = st.text_input("Period label (e.g., FY2024/25)", value=f"FY{tax_year}", key="sb_period_label")
 
-  # Define individual progressive brackets internally (hidden from UI)
-individual_brackets = [
-    {"threshold": 0.0, "rate": 0.0, "fixed": 0.0},
-    {"threshold": 2820000.0, "rate": 0.1, "fixed": 0.0},
-    {"threshold": 4020000.0, "rate": 0.2, "fixed": 120000.0},
-    {"threshold": 4920000.0, "rate": 0.3, "fixed": 360000.0},
-    {"threshold": 10000000.0, "rate": 0.4, "fixed": 1830000.0}
-]
+    taxpayer_type = st.selectbox(
+        "Taxpayer Type",
+        ["company", "individual"],
+        key="sb_taxpayer_type"
+    )
 
-# No need for st.text_area or JSON editing – brackets are fixed internally
+    tax_year = st.number_input(
+        "Year",
+        min_value=2000,
+        max_value=datetime.now().year,
+        value=datetime.now().year,
+        step=1,
+        key="sb_tax_year"
+    )
 
+    period_label = st.text_input(
+        "Period label (e.g., FY2024/25)",
+        value=f"FY{tax_year}",
+        key="sb_period_label"
+    )
+
+    # Company Rate
     st.markdown("### Company Rate")
-    company_rate = st.number_input("Company Income Tax Rate", min_value=0.0, max_value=1.0, value=0.30, step=0.01, key="sb_company_rate")
+    company_rate = st.number_input(
+        "Company Income Tax Rate",
+        min_value=0.0,
+        max_value=1.0,
+        value=0.30,
+        step=0.01,
+        key="sb_company_rate"
+    )
 
+    # Audit Materiality
     st.markdown("### Audit Materiality (UGX)")
-    audit_materiality = st.number_input("P&L Reconciliation Materiality", min_value=0.0, value=100_000.0, step=10_000.0, key="sb_audit_mat")
+    audit_materiality = st.number_input(
+        "P&L Reconciliation Materiality",
+        min_value=0.0,
+        value=100_000.0,
+        step=10_000.0,
+        key="sb_audit_mat"
+    )
 
+    # Control Account Map
     st.markdown("### Control Account Map (editable)")
     if "control_map" not in st.session_state:
         st.session_state["control_map"] = DEFAULT_CONTROL_MAP.copy()
+
     control_map = st.data_editor(
         st.session_state["control_map"],
         key="sb_control_map_editor",
@@ -556,6 +579,17 @@ individual_brackets = [
         num_rows="dynamic"
     )
     st.session_state["control_map"] = control_map
+
+# ----------------------------
+# Individual tax brackets (fixed internally, not editable in UI)
+# ----------------------------
+individual_brackets = [
+    {"threshold": 0.0, "rate": 0.0, "fixed": 0.0},
+    {"threshold": 2_820_000.0, "rate": 0.1, "fixed": 0.0},
+    {"threshold": 4_020_000.0, "rate": 0.2, "fixed": 120_000.0},
+    {"threshold": 4_920_000.0, "rate": 0.3, "fixed": 360_000.0},
+    {"threshold": 10_000_000.0, "rate": 0.4, "fixed": 1_830_000.0}
+]
 
 # ----------------------------
 # Tabs
