@@ -1,1 +1,0 @@
-# Django project urls placeholder
