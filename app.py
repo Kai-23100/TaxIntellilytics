@@ -401,103 +401,89 @@ def audit_findings(tb_df: pd.DataFrame,
     }
 
 # ---------------------------
-# Authentication flow (try authenticator lib, fall back to DB)
+# Authentication & Subscription Flow
 # ---------------------------
-
 st.set_page_config(page_title="TaxIntellilytics — Income Tax (Uganda)", layout="wide")
 st.title("💼 TaxIntellilytics — Income Tax (Uganda)")
 
-USE_AUTH_LIB = False
-authenticator = None
+# Initialize session state
+if "authenticated" not in st.session_state:
+    st.session_state["authenticated"] = False
+    st.session_state["current_user"] = None
+    st.session_state["subscription_active"] = False
+    st.session_state["plan"] = None
 
-# demo credentials (used only for building authenticator payload if lib available)
-_demo_usernames = ["user1", "user2"]
-_demo_passwords = ["12345", "password"]
-
-try:
-    import streamlit_authenticator as stauth
-    try:
-        # Try the modern API: Hasher(list_of_passwords).generate()
-        hashed_passwords = stauth.Hasher(_demo_passwords).generate()
-        user_dict = {u: {"name": u, "password": hp} for u, hp in zip(_demo_usernames, hashed_passwords)}
-        authenticator = stauth.Authenticate(
-            {"usernames": user_dict},
-            cookie_name="taxintellilytics_cookie",
-            key="taxintellilytics_signature",
-            cookie_expiry_days=1
-        )
-        USE_AUTH_LIB = True
-    except TypeError:
-        # Incompatible Hasher signature in this environment
-        USE_AUTH_LIB = False
-except Exception:
-    USE_AUTH_LIB = False
-
-username, name, auth_status = None, None, None
-
-if USE_AUTH_LIB and authenticator is not None:
-    # Use the library's login widget
-    name, auth_status, username = authenticator.login("Login", "sidebar")
-    if auth_status:
-        st.sidebar.write(f"Welcome {name} 👋")
-        authenticator.logout("Logout", "sidebar")
-
-        if check_subscription_db(username):
-            st.success("✅ Subscription active! Access granted.")
-            show_tax_module()
-        else:
-            st.warning("🚨 You need an active subscription to access TaxIntellilytics.")
-            if st.button("Subscribe with Flutterwave"):
-                link = create_payment_link(username)
-                if link:
-                    st.markdown(f"[Click here to pay via Flutterwave]({link})")
-    else:
-        if auth_status is False:
-            st.error("Username/password is incorrect")
-        else:
-            st.warning("Please enter your username and password")
-else:
-    # Fallback built-in login form
-    st.info("Using built-in login (fallback). This ensures the app runs even if the authenticator library is incompatible.")
-    if "authenticated" not in st.session_state:
-        st.session_state["authenticated"] = False
-        st.session_state["current_user"] = None
-
-    if not st.session_state["authenticated"]:
-        with st.form("login_form", clear_on_submit=False):
-            username_input = st.text_input("Username")
-            password_input = st.text_input("Password", type="password")
-            submitted = st.form_submit_button("Login")
-        if submitted:
-            rec = get_user_record(username_input)
+# Display login/signup interface
+if not st.session_state["authenticated"]:
+    st.subheader("🔑 Login / Subscribe")
+    tab_login, tab_signup = st.tabs(["Login / Renew", "Sign Up"])
+    
+    # ---------------------------
+    # LOGIN / RENEW
+    # ---------------------------
+    with tab_login:
+        login_username = st.text_input("Username", key="login_user")
+        login_password = st.text_input("Password", type="password", key="login_pass")
+        if st.button("Login / Renew"):
+            rec = get_user_record(login_username)
             if not rec:
                 st.error("Unknown user")
             else:
-                stored_hash = rec[1]
-                salt = rec[2] or rand_salt()
-                if hash_with_salt(password_input, salt) == stored_hash:
+                stored_hash, salt, expiry, plan = rec[1], rec[2], rec[3], rec[4]
+                if hash_with_salt(login_password, salt) == stored_hash:
                     st.session_state["authenticated"] = True
-                    st.session_state["current_user"] = username_input
-                    st.success(f"Welcome {username_input} 👋")
-                    st.experimental_rerun()
+                    st.session_state["current_user"] = login_username
+                    st.session_state["subscription_active"] = check_subscription_db(login_username)
+                    st.session_state["plan"] = plan
+                    st.success(f"Welcome {login_username} 👋")
                 else:
                     st.error("Incorrect password")
-    else:
-        cur_user = st.session_state["current_user"]
-        st.sidebar.write(f"Welcome {cur_user} 👋")
-        if st.button("Logout"):
-            st.session_state["authenticated"] = False
-            st.session_state["current_user"] = None
-            st.experimental_rerun()
+        
+        if st.session_state.get("current_user") and not st.session_state["subscription_active"]:
+            st.warning("🚨 Your subscription is inactive. Choose a plan to activate.")
+            selected_plan = st.selectbox("Select plan", ["Basic - 500,000 UGX/month", 
+                                                         "Standard - 1,000,000 UGX/month",
+                                                         "Premium - 1,500,000 UGX/month",
+                                                         "Annual - 10% of monthly × 12"])
+            if st.button("Subscribe via MTN/Airtel"):
+                # Call payment initialization function (replace Flutterwave with MTN/Airtel)
+                pay_link = create_payment_link(st.session_state["current_user"], plan=selected_plan)
+                if pay_link:
+                    st.markdown(f"[Click here to pay via MTN/Airtel]({pay_link})")
 
-        if check_subscription_db(cur_user):
-            st.success("✅ Subscription active! Access granted.")
-            show_tax_module()
-        else:
-            st.warning("🚨 You need an active subscription to access TaxIntellilytics.")
-            if st.button("Simulate Subscribe (demo)"):
-                update_subscription_db(cur_user, days=365)
-                st.experimental_rerun()
+    # ---------------------------
+    # SIGN UP
+    # ---------------------------
+    with tab_signup:
+        signup_username = st.text_input("Choose a username", key="signup_user")
+        signup_password = st.text_input("Choose a password", type="password", key="signup_pass")
+        signup_plan = st.selectbox("Choose a subscription plan", ["Basic - 500,000 UGX/month", 
+                                                                  "Standard - 1,000,000 UGX/month",
+                                                                  "Premium - 1,500,000 UGX/month",
+                                                                  "Annual - 10% of monthly × 12"])
+        if st.button("Sign Up & Subscribe"):
+            if get_user_record(signup_username):
+                st.error("Username already exists")
+            else:
+                salt = rand_salt()
+                hashed = hash_with_salt(signup_password, salt)
+                add_user_to_db(signup_username, hashed, salt, expiry=None, plan=signup_plan)
+                st.success("Account created! Proceed to payment.")
+                pay_link = create_payment_link(signup_username, plan=signup_plan)
+                if pay_link:
+                    st.markdown(f"[Click here to pay via MTN/Airtel]({pay_link})")
+
+# ---------------------------
+# AUTHENTICATED USER VIEW
+# ---------------------------
+if st.session_state["authenticated"]:
+    cur_user = st.session_state["current_user"]
+    st.sidebar.write(f"Welcome {cur_user} 👋")
+    if st.session_state["subscription_active"]:
+        st.success("✅ Subscription active! Access granted.")
+        show_tax_module()  # Your main tax app function
+    else:
+        st.warning("🚨 Subscription inactive. Please subscribe to access full features.")
               
 # ----------------------------
 # Sidebar configuration
