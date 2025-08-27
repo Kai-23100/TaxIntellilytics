@@ -7,78 +7,201 @@ from datetime import datetime
 from typing import List, Dict, Tuple
 import numpy as np
 import pandas as pd
+# app.py
+"""
+TaxIntellilytics — ready-to-run app.py
+Uses streamlit_authenticator when available and compatible (v0.4.x API).
+If Hasher() raises an error or is unavailable, uses a simple built-in login form
+so the app will run reliably in Streamlit Cloud / GitHub-only setups.
+"""
+
 import streamlit as st
-import streamlit_authenticator as stauth
+import sqlite3
+from datetime import datetime, timedelta
+import hashlib
 
-# -------------------------------
-# Users and passwords
-# -------------------------------
-usernames = ["user1", "user2"]
-passwords = ["12345", "password"]
+# ---------------------------
+# Utility: DB helpers
+# ---------------------------
+USERS_DB = "users.db"
 
-# Generate hashed passwords (v0.4.x)
-hashed_passwords = stauth.Hasher(passwords).generate()
+def init_user_db():
+    conn = sqlite3.connect(USERS_DB)
+    c = conn.cursor()
+    c.execute('''
+        CREATE TABLE IF NOT EXISTS users (
+            username TEXT PRIMARY KEY,
+            password_hash TEXT,
+            salt TEXT,
+            subscription_expiry TEXT
+        );
+    ''')
+    conn.commit()
+    conn.close()
 
-# Build users dictionary
-user_dict = {u: {"name": u, "password": hp} for u, hp in zip(usernames, hashed_passwords)}
+def add_user_to_db(username: str, password_hash: str, salt: str, expiry: str = None):
+    conn = sqlite3.connect(USERS_DB)
+    c = conn.cursor()
+    c.execute("INSERT OR REPLACE INTO users (username, password_hash, salt, subscription_expiry) VALUES (?,?,?,?)",
+              (username, password_hash, salt, expiry))
+    conn.commit()
+    conn.close()
 
-# -------------------------------
-# Create authenticator
-# -------------------------------
-authenticator = stauth.Authenticate(
-    {"usernames": user_dict},
-    cookie_name="taxintellilytics_cookie",
-    key="taxintellilytics_signature",
-    cookie_expiry_days=1
-)
+def get_user_record(username: str):
+    conn = sqlite3.connect(USERS_DB)
+    c = conn.cursor()
+    c.execute("SELECT username, password_hash, salt, subscription_expiry FROM users WHERE username=?", (username,))
+    row = c.fetchone()
+    conn.close()
+    return row
 
-# -------------------------------
-# Login widget
-# -------------------------------
-name, auth_status, username = authenticator.login("Login", "main")
+def update_subscription_db(username: str, days: int = 30):
+    expiry = (datetime.now() + timedelta(days=days)).strftime("%Y-%m-%d")
+    conn = sqlite3.connect(USERS_DB)
+    c = conn.cursor()
+    c.execute("UPDATE users SET subscription_expiry=? WHERE username=?", (expiry, username))
+    conn.commit()
+    conn.close()
 
-# -------------------------------
-# Main app logic
-# -------------------------------
-if auth_status:
-    st.sidebar.write(f"Welcome {name} 👋")
-    authenticator.logout("Logout", "sidebar")
+def check_subscription_db(username: str) -> bool:
+    rec = get_user_record(username)
+    if rec and rec[3]:
+        try:
+            expiry = datetime.strptime(rec[3], "%Y-%m-%d")
+            return expiry >= datetime.now()
+        except Exception:
+            return False
+    return False
 
-    # ---------------------------
-    # Subscription check function
-    # ---------------------------
-    def check_subscription(user):
-        # Example: only 'user1' has active subscription
-        active_users = ["user1"]
-        return user in active_users
+# ---------------------------
+# Minimal hashing utilities (fallback)
+# ---------------------------
+def rand_salt():
+    return hashlib.sha256(b"TaxIntelliSalt").hexdigest()[:16]
 
-    if check_subscription(username):
-        st.success("✅ Subscription active! Access granted.")
+def hash_with_salt(password: str, salt: str) -> str:
+    return hashlib.sha256((salt + password).encode("utf-8")).hexdigest()
 
-        # ---------------------------
-        # Tax Module (placeholder)
-        # ---------------------------
-        st.header("💰 Tax Module")
-        st.write("Here you can integrate your full tax computation module.")
-        st.write("Example input and output:")
+# ---------------------------
+# Prepare demo users (DB seeded)
+# ---------------------------
+init_user_db()
 
-        # Example data input
-        revenue = st.number_input("Enter Revenue (UGX)", min_value=0, value=1000000)
-        expenses = st.number_input("Enter Expenses (UGX)", min_value=0, value=500000)
-        if st.button("Compute Tax"):
-            profit = revenue - expenses
-            tax_rate = 0.3  # example 30% corporate tax
-            tax_due = profit * tax_rate
-            st.write(f"Profit: UGX {profit:,}")
-            st.write(f"Tax Due (30%): UGX {tax_due:,}")
+_demo_users = [
+    ("user1", "12345", True),
+    ("user2", "password", False),
+]
 
+for uname, pwd, has_sub in _demo_users:
+    salt = rand_salt()
+    phash = hash_with_salt(pwd, salt)
+    expiry = (datetime.now() + timedelta(days=365)).strftime("%Y-%m-%d") if has_sub else None
+    add_user_to_db(uname, phash, salt, expiry)
+
+# ---------------------------
+# Try to use streamlit_authenticator (safe, optional)
+# ---------------------------
+USE_AUTH_LIB = False
+authenticator = None
+try:
+    import streamlit_authenticator as stauth
+    try:
+        demo_passwords = ["12345", "password"]
+        hashed_passwords = stauth.Hasher(demo_passwords).generate()
+        demo_usernames = ["user1", "user2"]
+        user_dict = {u: {"name": u, "password": hp} for u, hp in zip(demo_usernames, hashed_passwords)}
+        authenticator = stauth.Authenticate(
+            {"usernames": user_dict},
+            cookie_name="taxintellilytics_cookie",
+            key="taxintellilytics_signature",
+            cookie_expiry_days=1
+        )
+        USE_AUTH_LIB = True
+    except TypeError:
+        USE_AUTH_LIB = False
+except Exception:
+    USE_AUTH_LIB = False
+
+# ---------------------------
+# UI and login flow
+# ---------------------------
+st.set_page_config(page_title="TaxIntellilytics — Income Tax (Uganda)", layout="wide")
+st.title("💼 TaxIntellilytics — Income Tax (Uganda)")
+
+if USE_AUTH_LIB and authenticator is not None:
+    name, auth_status, username = authenticator.login("Login", "main")
+    if auth_status:
+        st.sidebar.write(f"Welcome {name} 👋")
+        authenticator.logout("Logout", "sidebar")
+
+        if check_subscription_db(username):
+            st.success("✅ Subscription active! Access granted.")
+            st.header("TaxIntellilytics — Income Tax Module (Demo)")
+            revenue = st.number_input("Revenue (UGX)", min_value=0, value=1000000)
+            expenses = st.number_input("Expenses (UGX)", min_value=0, value=400000)
+            if st.button("Compute Tax"):
+                profit = revenue - expenses
+                tax_due = round(max(0, profit) * 0.30, 2)
+                st.write(f"Profit: UGX {profit:,}")
+                st.write(f"Tax Due (30%): UGX {tax_due:,}")
+        else:
+            st.warning("🚨 You need an active subscription to access TaxIntellilytics.")
+            if st.button("Simulate Subscribe (demo)"):
+                update_subscription_db(username, days=365)
+                st.experimental_rerun()
     else:
-        st.error("❌ Subscription inactive. Access denied.")
+        if auth_status is False:
+            st.error("❌ Username/password is incorrect")
+        else:
+            st.warning("⚠️ Please enter your username and password")
 else:
-    if auth_status is False:
-        st.error("Username/password incorrect")
+    st.info("Using built-in login (fallback).")
+    if "authenticated" not in st.session_state:
+        st.session_state["authenticated"] = False
+        st.session_state["current_user"] = None
+
+    if not st.session_state["authenticated"]:
+        with st.form("login_form", clear_on_submit=False):
+            username_input = st.text_input("Username")
+            password_input = st.text_input("Password", type="password")
+            submitted = st.form_submit_button("Login")
+        if submitted:
+            rec = get_user_record(username_input)
+            if not rec:
+                st.error("Unknown user")
+            else:
+                stored_hash = rec[1]
+                salt = rec[2] or rand_salt()
+                if hash_with_salt(password_input, salt) == stored_hash:
+                    st.session_state["authenticated"] = True
+                    st.session_state["current_user"] = username_input
+                    st.success(f"Welcome {username_input} 👋")
+                    st.experimental_rerun()
+                else:
+                    st.error("Incorrect password")
     else:
-        st.warning("Please enter username and password")
+        cur_user = st.session_state["current_user"]
+        st.sidebar.write(f"Welcome {cur_user} 👋")
+        if st.button("Logout"):
+            st.session_state["authenticated"] = False
+            st.session_state["current_user"] = None
+            st.experimental_rerun()
+
+        if check_subscription_db(cur_user):
+            st.success("✅ Subscription active! Access granted.")
+            st.header("TaxIntellilytics — Income Tax Module (Demo)")
+            revenue = st.number_input("Revenue (UGX)", min_value=0, value=1000000, key="rev")
+            expenses = st.number_input("Expenses (UGX)", min_value=0, value=400000, key="exp")
+            if st.button("Compute Tax (fallback)"):
+                profit = revenue - expenses
+                tax_due = round(max(0, profit) * 0.30, 2)
+                st.write(f"Profit: UGX {profit:,}")
+                st.write(f"Tax Due (30%): UGX {tax_due:,}")
+        else:
+            st.warning("🚨 You need an active subscription to access TaxIntellilytics.")
+            if st.button("Simulate Subscribe (demo)"):
+                update_subscription_db(cur_user, days=365)
+                st.experimental_rerun()
 
 # ================================
 # FLUTTERWAVE PAYMENT
