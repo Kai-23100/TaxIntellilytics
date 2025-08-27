@@ -529,14 +529,14 @@ with st.sidebar:
     tax_year = st.number_input("Year", min_value=2000, max_value=datetime.now().year, value=datetime.now().year, step=1, key="sb_tax_year")
     period_label = st.text_input("Period label (e.g., FY2024/25)", value=f"FY{tax_year}", key="sb_period_label")
 
-    st.markdown("### Individual Progressive Brackets (editable JSON)")
-    default_brackets = [
-        {"threshold": 0.0, "rate": 0.0, "fixed": 0.0},
-        {"threshold": 2_820_000.0, "rate": 0.10, "fixed": 0.0},
-        {"threshold": 4_020_000.0, "rate": 0.20, "fixed": 120_000.0},
-        {"threshold": 4_920_000.0, "rate": 0.30, "fixed": 360_000.0},
-        {"threshold": 10_000_000.0, "rate": 0.40, "fixed": 1_830_000.0},
-    ]
+    # Define individual progressive brackets internally (hidden from UI)
+individual_brackets = [
+    {"threshold": 0.0, "rate": 0.0, "fixed": 0.0},
+    {"threshold": 2820000.0, "rate": 0.1, "fixed": 0.0},
+    {"threshold": 4020000.0, "rate": 0.2, "fixed": 120000.0},
+    {"threshold": 4920000.0, "rate": 0.3, "fixed": 360000.0},
+    {"threshold": 10000000.0, "rate": 0.4, "fixed": 1830000.0}
+]
     brackets_json = st.text_area("Brackets JSON", value=json.dumps(default_brackets, indent=2), height=180, key="sb_brackets_json")
     try:
         individual_brackets = sorted(json.loads(brackets_json), key=lambda x: x["threshold"])
