@@ -103,77 +103,140 @@ SUBSCRIPTION_PLANS = {
     "Annual (10%)": {"price": 1_800_000, "days": 365}  # 10% annual discount
 }
 
-import streamlit as st
-
+# ---------------------------
+# Streamlit page setup
+# ---------------------------
 st.set_page_config(page_title="TaxIntellilytics — Income Tax (Uganda)", layout="wide")
 st.title("💼 TaxIntellilytics — Income Tax (Uganda)")
 
-# Initialize session state
+# ---------------------------
+# Session state defaults
+# ---------------------------
 if "authenticated" not in st.session_state:
     st.session_state["authenticated"] = False
+if "current_user" not in st.session_state:
     st.session_state["current_user"] = None
+if "subscription_active" not in st.session_state:
     st.session_state["subscription_active"] = False
+if "plan" not in st.session_state:
+    st.session_state["plan"] = None
+if "payment_pending" not in st.session_state:
+    st.session_state["payment_pending"] = False
+if "pending_plan" not in st.session_state:
+    st.session_state["pending_plan"] = None
 
-# If user is authenticated, show subscription-aware dashboard
-if st.session_state["authenticated"]:
-    cur_user = st.session_state["current_user"]
-    st.sidebar.write(f"Welcome {cur_user} 👋")
-    
-    # Check subscription status
-    if check_subscription_db(cur_user):
+# ---------------------------
+# Define subscription plans
+# ---------------------------
+SUBSCRIPTION_PLANS = {
+    "Basic - 500,000 UGX/month": {"amount": 500_000, "days": 30},
+    "Standard - 1,000,000 UGX/month": {"amount": 1_000_000, "days": 30},
+    "Premium - 1,500,000 UGX/month": {"amount": 1_500_000, "days": 30},
+    "Annual - 10% of monthly × 12": {"amount": 500_000*12*0.10, "days": 365}
+}
+
+# ---------------------------
+# Tabs: Login / Sign Up
+# ---------------------------
+tab_login, tab_signup = st.tabs(["Login / Renew", "Sign Up"])
+
+# ---------------------------
+# LOGIN / RENEW
+# ---------------------------
+with tab_login:
+    st.subheader("🔑 Login / Renew Subscription")
+    login_username = st.text_input("Username", key="login_user_tab")
+    login_password = st.text_input("Password", type="password", key="login_pass_tab")
+
+    if st.button("Login / Renew", key="login_btn_tab"):
+        rec = get_user_record(login_username)
+        if not rec:
+            st.error("Unknown user")
+        else:
+            stored_hash, salt, expiry, plan = rec[1], rec[2], rec[3], rec[4]
+            if hash_with_salt(login_password, salt) == stored_hash:
+                st.session_state["authenticated"] = True
+                st.session_state["current_user"] = login_username
+                st.session_state["subscription_active"] = check_subscription_db(login_username)
+                st.session_state["plan"] = plan
+                st.success(f"Welcome {login_username} 👋")
+
+                if not st.session_state["subscription_active"]:
+                    st.warning("🚨 Your subscription is inactive. Choose a plan to activate below.")
+            else:
+                st.error("Incorrect password")
+
+    # Subscription renewal
+    if st.session_state.get("authenticated") and not st.session_state["subscription_active"]:
+        selected_plan = st.selectbox(
+            "Select a subscription plan", 
+            list(SUBSCRIPTION_PLANS.keys()), 
+            key="login_plan_tab"
+        )
+        if st.button("Subscribe via MTN/Airtel", key="pay_btn_tab"):
+            plan_info = SUBSCRIPTION_PLANS[selected_plan]
+            pay_link = create_payment_link(st.session_state["current_user"], amount=plan_info["amount"])
+            if pay_link:
+                st.markdown(f"[Click here to pay via MTN/Airtel]({pay_link})")
+                st.session_state["payment_pending"] = True
+                st.session_state["pending_plan"] = selected_plan
+
+# ---------------------------
+# SIGN UP
+# ---------------------------
+with tab_signup:
+    st.subheader("📝 Sign Up & Subscribe")
+    signup_username = st.text_input("Choose a username", key="signup_user_tab")
+    signup_password = st.text_input("Choose a password", type="password", key="signup_pass_tab")
+    signup_plan = st.selectbox(
+        "Choose a subscription plan", 
+        list(SUBSCRIPTION_PLANS.keys()), 
+        key="signup_plan_tab"
+    )
+
+    if st.button("Sign Up & Subscribe", key="signup_btn_tab"):
+        if get_user_record(signup_username):
+            st.error("Username already exists")
+        else:
+            salt = rand_salt()
+            hashed = hash_with_salt(signup_password, salt)
+            add_user_to_db(signup_username, hashed, salt, expiry=None, plan=signup_plan)
+            st.success("Account created! Proceed to payment.")
+            plan_info = SUBSCRIPTION_PLANS[signup_plan]
+            pay_link = create_payment_link(signup_username, amount=plan_info["amount"])
+            if pay_link:
+                st.markdown(f"[Click here to pay via MTN/Airtel]({pay_link})")
+                st.session_state["payment_pending"] = True
+                st.session_state["pending_plan"] = signup_plan
+
+# ---------------------------
+# POST-PAYMENT CONFIRMATION
+# ---------------------------
+if st.session_state.get("authenticated") and st.session_state.get("payment_pending"):
+    st.info("Waiting for payment confirmation...")
+    # In production, you would poll MTN/Airtel API for payment success.
+    # For demo, add a manual "Confirm Payment" button:
+    if st.button("Confirm Payment (Demo)"):
+        plan_info = SUBSCRIPTION_PLANS[st.session_state["pending_plan"]]
+        update_subscription_db(st.session_state["current_user"], days=plan_info["days"])
         st.session_state["subscription_active"] = True
-        st.success("✅ Subscription active! Access granted.")
+        st.session_state["payment_pending"] = False
+        st.success(f"✅ Subscription activated for {st.session_state['pending_plan']}!")
         show_tax_module()
-    else:
-        st.warning("🚨 You need an active subscription to access TaxIntellilytics.")
-        if st.button("Subscribe via MTN/Airtel", key="sub_button"):
-            link = create_payment_link(cur_user)
-            if link:
-                st.markdown(f"[Click here to pay]({link})")
 
-    # Logout button
-    if st.button("Logout", key="logout_button"):
+# ---------------------------
+# LOGGED-IN VIEW
+# ---------------------------
+if st.session_state["authenticated"] and st.session_state["subscription_active"]:
+    st.sidebar.write(f"Welcome {st.session_state['current_user']} 👋")
+    if st.button("Logout", key="logout_btn_tab"):
         st.session_state["authenticated"] = False
         st.session_state["current_user"] = None
         st.session_state["subscription_active"] = False
-
-# If not authenticated, show login/signup tabs
-else:
-    tab1, tab2 = st.tabs(["Login / Renew", "Sign Up & Subscribe"])
-
-    with tab1:
-        with st.form("login_form", clear_on_submit=False):
-            login_username = st.text_input("Username", key="login_username")
-            login_password = st.text_input("Password", type="password", key="login_password")
-            submitted = st.form_submit_button("Login")
-            
-            if submitted:
-                rec = get_user_record(login_username)
-                if rec and hash_with_salt(login_password, rec[2]) == rec[1]:
-                    st.session_state["authenticated"] = True
-                    st.session_state["current_user"] = login_username
-                    st.success(f"Welcome {login_username} 👋")
-                else:
-                    st.error("Invalid username or password")
-
-    with tab2:
-        with st.form("signup_form", clear_on_submit=True):
-            signup_username = st.text_input("Choose a username", key="signup_username")
-            signup_password = st.text_input("Choose a password", type="password", key="signup_password")
-            plan_options = ["Basic - 500,000 UGX/month", "Standard - 1,000,000 UGX/month", "Premium - 1,500,000 UGX/month"]
-            selected_plan = st.selectbox("Choose a subscription plan", plan_options, key="signup_plan")
-            submitted = st.form_submit_button("Sign Up & Subscribe")
-
-            if submitted:
-                salt = rand_salt()
-                hashed = hash_with_salt(signup_password, salt)
-                days = {"Basic":30, "Standard":30, "Premium":30}[selected_plan.split(" ")[0]]  # example: 30 days each
-                add_user_to_db(signup_username, hashed, salt, plan=selected_plan,
-                               expiry=(datetime.now() + timedelta(days=days)).strftime("%Y-%m-%d"))
-                st.success("User created! Proceed to payment.")
-                link = create_payment_link(signup_username)
-                if link:
-                    st.markdown(f"[Click here to pay]({link})")
+        st.session_state["plan"] = None
+        st.session_state["payment_pending"] = False
+        st.session_state["pending_plan"] = None
+    show_tax_module()
 
 # ---------------------------
 # Tax computation & other utilities (kept as in your original file)
