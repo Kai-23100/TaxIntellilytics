@@ -1,15 +1,17 @@
+# Streamlit configuration file for TaxIntellilytics
+# Forces polling to avoid inotify watch limit errors
+
 [server]
-fileWatcherType = "none"        # Disables Streamlit's file watcher (fixes the inotify limit issue)
+# Use polling instead of inotify for file watching
+fileWatcherType = "poll"
 
-[browser]
-gatherUsageStats = false         # Disables sending usage stats to Streamlit
+# Polling interval in milliseconds
+fileWatcherPollInterval = 1000
 
-[theme]
-primaryColor = "#4CAF50"        # Your main accent color (green)
-backgroundColor = "#F7F7F7"     # App background color
-secondaryBackgroundColor = "#EAEAEA"  # Secondary background (cards, panels)
-textColor = "#000000"            # Text color
-font = "sans serif"              # Font style
+# Optional: Allow external access (for cloud deployments)
+enableCORS = false
+enableXsrfProtection = true
 
-[logger]
-level = "info"                   # Logging level (info is standard; change to "error" to reduce logs)
+[runner]
+# Keep auto-reload enabled
+watch = true
