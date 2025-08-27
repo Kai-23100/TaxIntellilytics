@@ -1,29 +1,23 @@
 # .streamlit/config.toml
-# TaxIntellilytics Streamlit configuration
-# Forces polling to avoid inotify watch limit errors on Linux and works on Windows/macOS
+# Minimal, compatible Streamlit config to avoid inotify errors by disabling OS file watchers.
+# Note: disabling file watching means Streamlit will NOT auto-reload when you change files;
+# you must restart the app to pick up code changes.
 
 [server]
-# Use polling instead of inotify
-fileWatcherType = "poll"
+# Disable Streamlit's file watcher to avoid inotify watch limit errors on Linux hosts
+fileWatcherType = "none"
 
-# Disable CORS (useful for cloud deployment)
+# Networking / security (adjust as needed)
+headless = true
 enableCORS = false
-
-# Enable XSRF protection
 enableXsrfProtection = true
 
-# Optional: port (numeric only, do not use $PORT here)
-# Streamlit Cloud or other hosts will use their own PORT env var automatically
-# port = 8501
-
-[browser]
-# Disable usage stats
-gatherUsageStats = false
-
 [theme]
-# Basic custom theme for TaxIntellilytics
 primaryColor = "#4CAF50"
 backgroundColor = "#F7F7F7"
 secondaryBackgroundColor = "#EAEAEA"
 textColor = "#000000"
 font = "sans serif"
+
+[logger]
+level = "info"
