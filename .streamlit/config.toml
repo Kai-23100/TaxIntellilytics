@@ -1,8 +1,8 @@
 [server]
 headless = true
-enableCORS = false
 port = 8501
-watchFiles = false
+enableCORS = false
+runOnSave = false
 
 [browser]
 gatherUsageStats = false
