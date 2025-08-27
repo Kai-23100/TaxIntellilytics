@@ -139,7 +139,7 @@ if AUTHENTICATOR_AVAILABLE:
         cookie_expiry_days=1
     )
 
-    name, username, auth_status = authenticator.login("Login", "sidebar")
+    name, username, auth_status = authenticator.login("Login", location="sidebar")
 
 else:
     # fallback simple login
