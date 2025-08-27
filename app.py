@@ -866,89 +866,121 @@ with tab3:
             load_history_cached.clear()  # refresh cache
             st.success("Saved to history.")
 
-# ----------------------------
-# Tab 4: Dashboard
-# ----------------------------
-from pathlib import Path
-import pandas as pd
-import streamlit as st
+# ==============================
+# TAB 4 – DASHBOARD
+# ==============================
+elif selected_tab == "Dashboard":
+    st.subheader("📊 Tax Dashboard")
 
-with tab4:
-    st.subheader("📊 Multi-Year History Dashboard")
-    
-    # --- Historical Tax Data ---
-    data_file = Path("data/tax_history.csv")
-    if data_file.exists():
+    # Load history (make sure load_history_cached is defined earlier in the script)
+    history = load_history_cached()
+
+    if history.empty:
+        st.info("No computation history found. Run a computation first.")
+    else:
+        # Metrics overview
+        st.metric("Total Computations", len(history))
+        st.metric("Total Declared Income", f"{history['income'].sum():,.0f}")
+        st.metric("Total Tax Paid", f"{history['tax'].sum():,.0f}")
+
+        # Table view
+        st.dataframe(history)
+
+        # Plotting
+        st.line_chart(history.set_index("timestamp")["tax"])
+
+        # Allow export
+        csv = history.to_csv(index=False)
+        st.download_button("Download History (CSV)", csv, "history.csv", "text/csv")
+
+# ==============================
+# TAB 5 – EXPORT & URA FORMS
+# ==============================
+elif selected_tab == "Export & URA Forms":
+    st.subheader("📑 Export Returns")
+
+    # Re-use computation results stored in session_state
+    if "tax_result" not in st.session_state:
+        st.warning("Run a computation first before exporting.")
+    else:
+        result = st.session_state["tax_result"]
+
+        # Example: validate and build return (stub – define earlier in script)
+        if st.button("Generate DT-2001 Form"):
+            try:
+                return_df = validate_and_build_return(result, form="DT2001")
+                st.success("DT-2001 Return generated successfully!")
+
+                st.dataframe(return_df)
+
+                # Allow download
+                csv = return_df.to_csv(index=False)
+                st.download_button("Download DT-2001", csv, "DT2001.csv", "text/csv")
+            except Exception as e:
+                st.error(f"Error: {e}")
+
+        if st.button("Generate DT-2002 Form"):
+            try:
+                return_df = validate_and_build_return(result, form="DT2002")
+                st.success("DT-2002 Return generated successfully!")
+
+                st.dataframe(return_df)
+
+                csv = return_df.to_csv(index=False)
+                st.download_button("Download DT-2002", csv, "DT2002.csv", "text/csv")
+            except Exception as e:
+                st.error(f"Error: {e}")
+
+# ==============================
+# TAB 6 – AUDIT & CONTROLS
+# ==============================
+elif selected_tab == "Audit & Controls":
+    st.subheader("🧾 Audit & Control Accounts")
+
+    uploaded_file = st.file_uploader("Upload Trial Balance (CSV or Excel)", type=["csv", "xlsx"])
+
+    if uploaded_file:
         try:
-            df_history = pd.read_csv(data_file)
+            if uploaded_file.name.endswith(".csv"):
+                df = pd.read_csv(uploaded_file)
+            else:
+                df = pd.read_excel(uploaded_file)
+
+            st.write("Preview of Uploaded Trial Balance:")
+            st.dataframe(df.head())
+
+            # Check required columns
+            required_cols = {"Account", "Debit", "Credit"}
+            if not required_cols.issubset(df.columns):
+                st.error("Trial Balance must include: Account, Debit, Credit")
+            else:
+                # Summaries
+                total_debit = df["Debit"].sum()
+                total_credit = df["Credit"].sum()
+                st.metric("Total Debit", f"{total_debit:,.0f}")
+                st.metric("Total Credit", f"{total_credit:,.0f}")
+
+                if abs(total_debit - total_credit) < 1e-2:
+                    st.success("Trial Balance is balanced ✅")
+                else:
+                    st.error("Trial Balance is not balanced ❌")
+
+                # Reconcile key control accounts
+                control_accounts = ["Cash", "Bank", "Trade Debtors", "Trade Creditors", "Tax Payable"]
+                df_controls = df[df["Account"].isin(control_accounts)]
+                if not df_controls.empty:
+                    st.write("Control Accounts Check:")
+                    st.dataframe(df_controls)
+
+                # Profit and Loss check (stub logic)
+                try:
+                    p_and_l = total_credit - total_debit
+                    st.info(f"Derived P&L: {p_and_l:,.0f}")
+                except Exception as e:
+                    st.warning(f"Could not compute P&L: {e}")
+
         except Exception as e:
-            st.error(f"Failed to read historical data: {e}")
-            df_history = pd.DataFrame(columns=["Client", "Year", "Tax Liability", "Sector", "Revenue"])
-    else:
-        st.warning("Historical data file not found. Please upload 'tax_history.csv' in the 'data/' folder.")
-        df_history = pd.DataFrame(columns=["Client", "Year", "Tax Liability", "Sector", "Revenue"])
-
-    # Ensure numeric columns
-    for col in ["Year", "Tax Liability", "Revenue"]:
-        if col in df_history.columns:
-            df_history[col] = pd.to_numeric(df_history[col], errors="coerce")
-    
-    # Filter by client
-    client_filter = st.text_input("Filter by client name:")
-    if client_filter:
-        df_filtered = df_history[df_history["Client"].str.contains(client_filter, case=False, na=False)]
-    else:
-        df_filtered = df_history.copy()
-
-    # Filter by year range
-    min_year = int(df_history["Year"].min()) if not df_history.empty else 2000
-    max_year = int(df_history["Year"].max()) if not df_history.empty else 2025
-    year_range = st.slider("Select year range:", min_value=min_year, max_value=max_year, value=(min_year, max_year))
-    df_filtered = df_filtered[(df_filtered["Year"] >= year_range[0]) & (df_filtered["Year"] <= year_range[1])]
-
-    # Display filtered data
-    st.dataframe(df_filtered.reset_index(drop=True))
-
-    # Plot total tax liability over time
-    if not df_filtered.empty:
-        tax_trend = df_filtered.groupby("Year")["Tax Liability"].sum().reset_index()
-        st.line_chart(tax_trend.rename(columns={"Tax Liability": "Total Tax Liability"}).set_index("Year"))
-
-        # Sector-wise breakdown
-        sector_breakdown = df_filtered.groupby("Sector")["Tax Liability"].sum().sort_values(ascending=False)
-        st.bar_chart(sector_breakdown)
-    else:
-        st.info("No data available for the selected filters.")
-    
-    # Download filtered data
-    csv = df_filtered.to_csv(index=False).encode('utf-8')
-    st.download_button(
-        label="📥 Download filtered data as CSV",
-        data=csv,
-        file_name="filtered_tax_history.csv",
-        mime="text/csv"
-    )
-    
-    # --- Export & URA Forms ---
-    st.subheader("📝 Export & URA Forms")
-    st.info("Generate URA-compliant forms and export reports here.")
-    
-    with st.expander("📄 URA Forms Options"):
-        st.write("Placeholder for: VAT Returns, PAYE Returns, Corporate Tax Returns, etc.")
-        # Example buttons
-        st.button("Generate VAT Form")
-        st.button("Generate PAYE Form")
-        st.button("Generate Corporate Tax Form")
-    
-    # --- Audit & Controls ---
-    st.subheader("🛡️ Audit & Controls")
-    st.info("Monitor controls, audit logs, and data integrity.")
-    
-    with st.expander("🔍 Audit Options"):
-        st.write("Placeholder for: Control checks, anomaly detection, and audit reports.")
-        st.button("Run Control Checks")
-        st.button("Run Anomaly Detection")
-        st.button("Export Audit Report")
+            st.error(f"Upload error: {e}")
 
 # ----------------------------
 # Footer / App Info
