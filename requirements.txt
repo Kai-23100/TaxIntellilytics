@@ -7,4 +7,3 @@ requests
 cryptography
 python-dotenv
 bcrypt
-shadcn-ui
