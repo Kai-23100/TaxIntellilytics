@@ -5,13 +5,6 @@
 # Use polling instead of inotify for file watching
 fileWatcherType = "poll"
 
-# Polling interval in milliseconds
-fileWatcherPollInterval = 1000
-
 # Optional: Allow external access (for cloud deployments)
 enableCORS = false
 enableXsrfProtection = true
-
-[runner]
-# Keep auto-reload enabled
-watch = true
