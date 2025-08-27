@@ -107,7 +107,7 @@ SUBSCRIPTION_PLANS = {
 # Streamlit page setup
 # ---------------------------
 st.set_page_config(page_title="TaxIntellilytics — Income Tax (Uganda)", layout="wide")
-st.title("💼 TaxIntellilytics — Income Tax (Uganda)")
+st.title("💼 TaxIntellilytics")
 
 # ---------------------------
 # Session state defaults
