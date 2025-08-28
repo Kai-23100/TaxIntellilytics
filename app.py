@@ -246,18 +246,21 @@ tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8, tab9, tab10, tab11 = st.tabs([
 # ---------------------------
 with tab1:
     st.subheader("📂 Upload Financials (CSV/XLSX) or Connect to QuickBooks (Optional)")
+
     # Simulated QuickBooks connection button
     def qb_connect_button():
         import pandas as pd
         return pd.DataFrame()  # empty DataFrame as placeholder
 
     qb_df = qb_connect_button()
+
     uploaded = st.file_uploader(
         "Upload P&L / Trial Balance (CSV or Excel)",
         type=["csv", "xlsx"],
         help="Upload a Profit & Loss or Trial Balance export from your accounting system",
-        key="t1_file_uploader"
+        key="tab1_file_uploader"
     )
+
     df = None
     if qb_df is not None and not qb_df.empty:
         df = qb_df
@@ -273,11 +276,12 @@ with tab1:
         except Exception as e:
             st.error(f"Failed to parse file: {e}")
             df = None
+
     if df is not None and not df.empty:
         st.session_state["pl_df"] = df
         st.write("### Preview (first 50 rows)")
         st.dataframe(df.head(50), use_container_width=True)
-        if st.button("Auto-Map P&L (fast)", key="t1_btn_automap"):
+        if st.button("Auto-Map P&L (fast)", key="tab1_btn_automap"):
             df_json = df.head(10000).to_json()
             # Dummy auto-mapping logic
             revenue = float(df[df.columns[-1]].sum())
@@ -298,7 +302,7 @@ with tab2:
     else:
         df = st.session_state["pl_df"].copy()
         st.write("Auto-detect common columns (Account/Amount) or provide manual values.")
-        if st.button("Auto-Map (cached)", key="t2_btn_automap"):
+        if st.button("Auto-Map (cached)", key="tab2_btn_automap"):
             df_json = df.head(10000).to_json()
             revenue = float(df[df.columns[-1]].sum())
             st.session_state["mapped_values"] = {
@@ -307,178 +311,12 @@ with tab2:
             st.success("Auto-mapping complete (you can override the values).")
     mv = st.session_state.get("mapped_values", {})
     st.markdown("#### Manual / Override entries (edit and press Update)")
-    with st.form("t2_form_pnl_manual", clear_on_submit=False):
-        revenue = st.number_input("Revenue (UGX)", min_value=0.0, value=float(mv.get("revenue", 0.0)), step=1000.0, format="%.2f", key="t2_in_revenue")
-        cogs = st.number_input("COGS (UGX)", min_value=0.0, value=float(mv.get("cogs", 0.0)), step=1000.0, format="%.2f", key="t2_in_cogs")
-        opex = st.number_input("Operating Expenses (UGX)", min_value=0.0, value=float(mv.get("opex", 0.0)), step=1000.0, format="%.2f", key="t2_in_opex")
-        other_income = st.number_input("Other Income (UGX)", min_value=0.0, value=float(mv.get("other_income", 0.0)), step=1000.0, format="%.2f", key="t2_in_oi")
-        other_expenses = st.number_input("Other Expenses (UGX)", min_value=0.0, value=float(mv.get("other_expenses", 0.0)), step=1000.0, format="%.2f", key="t2_in_oe")
-        update_btn = st.form_submit_button("Update P&L Mapping", use_container_width=True)
-    if update_btn:
-        st.session_state["mapped_values"] = {
-            "revenue": revenue, "cogs": cogs, "opex": opex,
-            "other_income": other_income, "other_expenses": other_expenses
-        }
-        st.success("P&L mapping updated.")
-    mv = st.session_state.get("mapped_values", {})
-    pbit_manual = (mv.get("revenue", 0.0) + mv.get("other_income", 0.0)) - (mv.get("cogs", 0.0) + mv.get("opex", 0.0) + mv.get("other_expenses", 0.0))
-    st.metric("Derived Profit / (Loss) Before Allowances (PBIT)", f"UGX {pbit_manual:,.2f}")
-
-# ---------------------------
-# Tab 1: Data Import
-# ---------------------------
-with tab1:
-    st.subheader("📂 Upload Financials (CSV/XLSX) or Connect to QuickBooks (Optional)")
-    # Simulated QuickBooks connection button
-    def qb_connect_button():
-        import pandas as pd
-        return pd.DataFrame()  # empty DataFrame as placeholder
-
-    qb_df = qb_connect_button()
-    uploaded = st.file_uploader(
-        "Upload P&L / Trial Balance (CSV or Excel)",
-        type=["csv", "xlsx"],
-        help="Upload a Profit & Loss or Trial Balance export from your accounting system",
-        key="t1_file_uploader"
-    )
-    df = None
-    if qb_df is not None and not qb_df.empty:
-        df = qb_df
-    if uploaded is not None:
-        uploaded_bytes = uploaded.getvalue()
-        try:
-            if uploaded.name.endswith(".csv"):
-                df = pd.read_csv(io.BytesIO(uploaded_bytes))
-            elif uploaded.name.endswith(".xlsx"):
-                df = pd.read_excel(io.BytesIO(uploaded_bytes))
-            else:
-                raise ValueError("Unsupported file type")
-        except Exception as e:
-            st.error(f"Failed to parse file: {e}")
-            df = None
-    if df is not None and not df.empty:
-        st.session_state["pl_df"] = df
-        st.write("### Preview (first 50 rows)")
-        st.dataframe(df.head(50), use_container_width=True)
-        if st.button("Auto-Map P&L (fast)", key="t1_btn_automap"):
-            df_json = df.head(10000).to_json()
-            # Dummy auto-mapping logic
-            revenue = float(df[df.columns[-1]].sum())
-            st.session_state["mapped_values"] = {
-                "revenue": revenue, "cogs": 0.0, "opex": 0.0, "other_income": 0.0, "other_expenses": 0.0
-            }
-            st.success("Auto-map completed — check P&L Mapping tab to adjust/confirm.")
-    else:
-        st.info("Upload a file or use QuickBooks (simulated) to proceed.")
-
-# ---------------------------
-# Tab 2: P&L Mapping
-# ---------------------------
-with tab2:
-    st.subheader("🧭 Map P&L → Revenue / COGS / OPEX / Other")
-    if st.session_state.get("pl_df") is None:
-        st.warning("No data found. Go to 'Data Import' first or manually enter P&L below.")
-    else:
-        df = st.session_state["pl_df"].copy()
-        st.write("Auto-detect common columns (Account/Amount) or provide manual values.")
-        if st.button("Auto-Map (cached)", key="t2_btn_automap"):
-            df_json = df.head(10000).to_json()
-            revenue = float(df[df.columns[-1]].sum())
-            st.session_state["mapped_values"] = {
-                "revenue": revenue, "cogs": 0.0, "opex": 0.0, "other_income": 0.0, "other_expenses": 0.0
-            }
-            st.success("Auto-mapping complete (you can override the values).")
-    mv = st.session_state.get("mapped_values", {})
-    st.markdown("#### Manual / Override entries (edit and press Update)")
-    with st.form("t2_form_pnl_manual", clear_on_submit=False):
-        revenue = st.number_input("Revenue (UGX)", min_value=0.0, value=float(mv.get("revenue", 0.0)), step=1000.0, format="%.2f", key="t2_in_revenue")
-        cogs = st.number_input("COGS (UGX)", min_value=0.0, value=float(mv.get("cogs", 0.0)), step=1000.0, format="%.2f", key="t2_in_cogs")
-        opex = st.number_input("Operating Expenses (UGX)", min_value=0.0, value=float(mv.get("opex", 0.0)), step=1000.0, format="%.2f", key="t2_in_opex")
-        other_income = st.number_input("Other Income (UGX)", min_value=0.0, value=float(mv.get("other_income", 0.0)), step=1000.0, format="%.2f", key="t2_in_oi")
-        other_expenses = st.number_input("Other Expenses (UGX)", min_value=0.0, value=float(mv.get("other_expenses", 0.0)), step=1000.0, format="%.2f", key="t2_in_oe")
-        update_btn = st.form_submit_button("Update P&L Mapping", use_container_width=True)
-    if update_btn:
-        st.session_state["mapped_values"] = {
-            "revenue": revenue, "cogs": cogs, "opex": opex,
-            "other_income": other_income, "other_expenses": other_expenses
-        }
-        st.success("P&L mapping updated.")
-    mv = st.session_state.get("mapped_values", {})
-    pbit_manual = (mv.get("revenue", 0.0) + mv.get("other_income", 0.0)) - (mv.get("cogs", 0.0) + mv.get("opex", 0.0) + mv.get("other_expenses", 0.0))
-    st.metric("Derived Profit / (Loss) Before Allowances (PBIT)", f"UGX {pbit_manual:,.2f}")
-
-# ---------------------------
-# Tab 1: Data Import
-# ---------------------------
-with tab1:
-    st.subheader("📂 Upload Financials (CSV/XLSX) or Connect to QuickBooks (Optional)")
-    # Simulated QuickBooks connection button
-    def qb_connect_button():
-        import pandas as pd
-        return pd.DataFrame()  # empty DataFrame as placeholder
-
-    qb_df = qb_connect_button()
-    uploaded = st.file_uploader(
-        "Upload P&L / Trial Balance (CSV or Excel)",
-        type=["csv", "xlsx"],
-        help="Upload a Profit & Loss or Trial Balance export from your accounting system",
-        key="t1_file_uploader"
-    )
-    df = None
-    if qb_df is not None and not qb_df.empty:
-        df = qb_df
-    if uploaded is not None:
-        uploaded_bytes = uploaded.getvalue()
-        try:
-            if uploaded.name.endswith(".csv"):
-                df = pd.read_csv(io.BytesIO(uploaded_bytes))
-            elif uploaded.name.endswith(".xlsx"):
-                df = pd.read_excel(io.BytesIO(uploaded_bytes))
-            else:
-                raise ValueError("Unsupported file type")
-        except Exception as e:
-            st.error(f"Failed to parse file: {e}")
-            df = None
-    if df is not None and not df.empty:
-        st.session_state["pl_df"] = df
-        st.write("### Preview (first 50 rows)")
-        st.dataframe(df.head(50), use_container_width=True)
-        if st.button("Auto-Map P&L (fast)", key="t1_btn_automap"):
-            df_json = df.head(10000).to_json()
-            # Dummy auto-mapping logic
-            revenue = float(df[df.columns[-1]].sum())
-            st.session_state["mapped_values"] = {
-                "revenue": revenue, "cogs": 0.0, "opex": 0.0, "other_income": 0.0, "other_expenses": 0.0
-            }
-            st.success("Auto-map completed — check P&L Mapping tab to adjust/confirm.")
-    else:
-        st.info("Upload a file or use QuickBooks (simulated) to proceed.")
-
-# ---------------------------
-# Tab 2: P&L Mapping
-# ---------------------------
-with tab2:
-    st.subheader("🧭 Map P&L → Revenue / COGS / OPEX / Other")
-    if st.session_state.get("pl_df") is None:
-        st.warning("No data found. Go to 'Data Import' first or manually enter P&L below.")
-    else:
-        df = st.session_state["pl_df"].copy()
-        st.write("Auto-detect common columns (Account/Amount) or provide manual values.")
-        if st.button("Auto-Map (cached)", key="t2_btn_automap"):
-            df_json = df.head(10000).to_json()
-            revenue = float(df[df.columns[-1]].sum())
-            st.session_state["mapped_values"] = {
-                "revenue": revenue, "cogs": 0.0, "opex": 0.0, "other_income": 0.0, "other_expenses": 0.0
-            }
-            st.success("Auto-mapping complete (you can override the values).")
-    mv = st.session_state.get("mapped_values", {})
-    st.markdown("#### Manual / Override entries (edit and press Update)")
-    with st.form("t2_form_pnl_manual", clear_on_submit=False):
-        revenue = st.number_input("Revenue (UGX)", min_value=0.0, value=float(mv.get("revenue", 0.0)), step=1000.0, format="%.2f", key="t2_in_revenue")
-        cogs = st.number_input("COGS (UGX)", min_value=0.0, value=float(mv.get("cogs", 0.0)), step=1000.0, format="%.2f", key="t2_in_cogs")
-        opex = st.number_input("Operating Expenses (UGX)", min_value=0.0, value=float(mv.get("opex", 0.0)), step=1000.0, format="%.2f", key="t2_in_opex")
-        other_income = st.number_input("Other Income (UGX)", min_value=0.0, value=float(mv.get("other_income", 0.0)), step=1000.0, format="%.2f", key="t2_in_oi")
-        other_expenses = st.number_input("Other Expenses (UGX)", min_value=0.0, value=float(mv.get("other_expenses", 0.0)), step=1000.0, format="%.2f", key="t2_in_oe")
+    with st.form("tab2_form_pnl_manual", clear_on_submit=False):
+        revenue = st.number_input("Revenue (UGX)", min_value=0.0, value=float(mv.get("revenue", 0.0)), step=1000.0, format="%.2f", key="tab2_in_revenue")
+        cogs = st.number_input("COGS (UGX)", min_value=0.0, value=float(mv.get("cogs", 0.0)), step=1000.0, format="%.2f", key="tab2_in_cogs")
+        opex = st.number_input("Operating Expenses (UGX)", min_value=0.0, value=float(mv.get("opex", 0.0)), step=1000.0, format="%.2f", key="tab2_in_opex")
+        other_income = st.number_input("Other Income (UGX)", min_value=0.0, value=float(mv.get("other_income", 0.0)), step=1000.0, format="%.2f", key="tab2_in_oi")
+        other_expenses = st.number_input("Other Expenses (UGX)", min_value=0.0, value=float(mv.get("other_expenses", 0.0)), step=1000.0, format="%.2f", key="tab2_in_oe")
         update_btn = st.form_submit_button("Update P&L Mapping", use_container_width=True)
     if update_btn:
         st.session_state["mapped_values"] = {
@@ -496,8 +334,8 @@ with tab2:
 with tab3:
     st.subheader("🧮 Compute Tax, Apply Credits & Exemptions")
 
-    client_name = st.text_input("Client Name", value="Acme Ltd", key="t3_client_name")
-    tin = st.text_input("TIN (optional)", key="t3_tin")
+    client_name = st.text_input("Client Name", value="Acme Ltd", key="tab3_client_name")
+    tin = st.text_input("TIN (optional)", key="tab3_tin")
 
     mv = st.session_state.get("mapped_values", {})
     revenue = mv.get("revenue", 0.0)
@@ -543,10 +381,10 @@ with tab3:
         "Staff Leave Provisions", "Increase in Gratuity", "Balancing Charge"
     ]
     with st.expander("Addbacks (Disallowable Expenses) — click to edit and save", expanded=False):
-        with st.form("t3_form_addbacks"):
+        with st.form("tab3_form_addbacks"):
             ab_values = {}
             for label in addbacks_labels:
-                key = f"t3_ab_{re.sub(r'[^a-z0-9]+', '_', label.lower())}"
+                key = f"tab3_ab_{re.sub(r'[^a-z0-9]+', '_', label.lower())}"
                 default_val = float(st.session_state.get("addbacks_values", {}).get(key, 0.0))
                 ab_values[key] = st.number_input(label, min_value=0.0, value=default_val, format="%.2f", key=key + "_widget")
             addbacks_submit = st.form_submit_button("Save Addbacks", use_container_width=True)
@@ -589,10 +427,10 @@ with tab3:
         "Balancing Allowance"
     ]
     with st.expander("Allowables (Deductions) — click to edit and save", expanded=False):
-        with st.form("t3_form_allowables"):
+        with st.form("tab3_form_allowables"):
             al_values = {}
             for label in allowables_labels:
-                key = f"t3_al_{re.sub(r'[^a-z0-9]+', '_', label.lower())}"
+                key = f"tab3_al_{re.sub(r'[^a-z0-9]+', '_', label.lower())}"
                 default_val = float(st.session_state.get("allowables_values", {}).get(key, 0.0))
                 al_values[key] = st.number_input(label, min_value=0.0, value=default_val, format="%.2f", key=key + "_widget")
             allowables_submit = st.form_submit_button("Save Allowables", use_container_width=True)
@@ -609,14 +447,14 @@ with tab3:
     st.markdown("### Credits, Capital Allowances & Rebates")
     col1, col2, col3 = st.columns(3)
     with col1:
-        capital_allowances = st.number_input("Capital Allowances (UGX)", min_value=0.0, value=0.0, format="%.2f", key="t3_in_capital_allowances")
-        exemptions = st.number_input("Exemptions (UGX)", min_value=0.0, value=0.0, format="%.2f", key="t3_in_exemptions")
+        capital_allowances = st.number_input("Capital Allowances (UGX)", min_value=0.0, value=0.0, format="%.2f", key="tab3_in_capital_allowances")
+        exemptions = st.number_input("Exemptions (UGX)", min_value=0.0, value=0.0, format="%.2f", key="tab3_in_exemptions")
     with col2:
-        credits_wht = st.number_input("WHT Credits (UGX)", min_value=0.0, value=0.0, format="%.2f", key="t3_in_wht")
-        credits_foreign = st.number_input("Foreign Tax Credit (UGX)", min_value=0.0, value=0.0, format="%.2f", key="t3_in_ftc")
+        credits_wht = st.number_input("WHT Credits (UGX)", min_value=0.0, value=0.0, format="%.2f", key="tab3_in_wht")
+        credits_foreign = st.number_input("Foreign Tax Credit (UGX)", min_value=0.0, value=0.0, format="%.2f", key="tab3_in_ftc")
     with col3:
-        rebates = st.number_input("Rebates (UGX)", min_value=0.0, value=0.0, format="%.2f", key="t3_in_rebates")
-        provisional_tax_paid = st.number_input("Provisional Tax Paid (UGX)", min_value=0.0, value=0.0, format="%.2f", key="t3_in_provisional")
+        rebates = st.number_input("Rebates (UGX)", min_value=0.0, value=0.0, format="%.2f", key="tab3_in_rebates")
+        provisional_tax_paid = st.number_input("Provisional Tax Paid (UGX)", min_value=0.0, value=0.0, format="%.2f", key="tab3_in_provisional")
 
     # Tax computation functions
     def compute_individual_tax_brackets(taxable_income: float, brackets: List[Dict]) -> float:
@@ -652,7 +490,7 @@ with tab3:
         {"threshold": 10_000_000.0, "rate": 0.4, "fixed": 1_830_000.0}
     ]
 
-    if st.button("Compute Tax Liability", key="t3_btn_compute"):
+    if st.button("Compute Tax Liability", key="tab3_btn_compute"):
         adjusted_taxable_income = max(0.0, chargeable_income - capital_allowances - exemptions)
         if taxpayer_type.lower() == "company":
             gross_tax = compute_company_tax(adjusted_taxable_income, company_rate=company_rate)
@@ -690,7 +528,7 @@ with tab3:
             conn.commit()
             conn.close()
 
-        if st.button("💾 Save Computation to History (DB)", key="t3_btn_save_history"):
+        if st.button("💾 Save Computation to History (DB)", key="tab3_btn_save_history"):
             row = {
                 "client_name": client_name,
                 "taxpayer_type": taxpayer_type,
