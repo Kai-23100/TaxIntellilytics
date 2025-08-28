@@ -11,17 +11,13 @@ import hashlib
 import streamlit as st
 
 # ---------------------------
-# Database paths
+# Paths & DB Initialization
 # ---------------------------
 DB_DIR = "/tmp/taxintellilytics"
 USERS_DB = f"{DB_DIR}/users.db"
 HISTORY_DB = f"{DB_DIR}/taxintellilytics_history.sqlite"
-
 os.makedirs(DB_DIR, exist_ok=True)
 
-# ---------------------------
-# Initialize Users DB
-# ---------------------------
 def init_user_db():
     conn = sqlite3.connect(USERS_DB)
     c = conn.cursor()
@@ -37,11 +33,6 @@ def init_user_db():
     conn.commit()
     conn.close()
 
-init_user_db()
-
-# ---------------------------
-# Initialize History DB
-# ---------------------------
 def init_history_db():
     conn = sqlite3.connect(HISTORY_DB)
     c = conn.cursor()
@@ -73,10 +64,11 @@ def init_history_db():
     conn.commit()
     conn.close()
 
+init_user_db()
 init_history_db()
 
 # ---------------------------
-# Hash helpers
+# Authentication Helpers
 # ---------------------------
 def rand_salt():
     return hashlib.sha256(os.urandom(16)).hexdigest()[:16]
@@ -84,9 +76,6 @@ def rand_salt():
 def hash_with_salt(password: str, salt: str) -> str:
     return hashlib.sha256((salt + password).encode("utf-8")).hexdigest()
 
-# ---------------------------
-# User DB helpers
-# ---------------------------
 def add_user_to_db(username, password_hash, salt, expiry=None, plan=None):
     conn = sqlite3.connect(USERS_DB)
     c = conn.cursor()
@@ -126,24 +115,21 @@ def update_subscription(username, days, plan):
     conn.commit()
     conn.close()
 
-# ---------------------------
-# Subscription plans
-# ---------------------------
 SUBSCRIPTION_PLANS = {
     "Basic - 500,000 UGX/month": {"amount": 500_000, "days": 30},
     "Standard - 1,000,000 UGX/month": {"amount": 1_000_000, "days": 30},
     "Premium - 1,500,000 UGX/month": {"amount": 1_500_000, "days": 30},
-    "Annual - 10% of monthly × 12": {"amount": 500_000*12*0.90, "days": 365}  # 10% discount
+    "Annual - 10% of monthly × 12": {"amount": 500_000*12*0.90, "days": 365}
 }
 
 # ---------------------------
-# Streamlit page setup
+# Streamlit Page Setup
 # ---------------------------
-st.set_page_config(page_title="TaxIntellilytics — Income Tax (Uganda)", layout="wide")
-st.title("💼 TaxIntellilytics")
+st.set_page_config(page_title="TaxIntellilytics", layout="wide")
+st.title("💼 TaxIntellilytics — Uganda Tax Compliance Toolkit")
 
 # ---------------------------
-# Session state defaults
+# Session State Defaults
 # ---------------------------
 for key, val in [
     ("authenticated", False),
@@ -157,565 +143,168 @@ for key, val in [
         st.session_state[key] = val
 
 # ---------------------------
-# Helper stubs for missing functions
+# Authentication UI
 # ---------------------------
-def create_payment_link(username, amount):
-    # Simulate payment link creation
-    return f"https://pay.example.com/{username}?amount={amount}"
-
-def check_subscription_db(username):
-    return check_subscription(username)
-
-def update_subscription_db(username, days, plan):
-    update_subscription(username, days, plan)
-
-def show_tax_module():
-    st.info("Main tax module goes here. (Stub)")
-
-def parse_financial_file_bytes(file_bytes, filename):
-    if filename.endswith(".csv"):
-        return pd.read_csv(io.BytesIO(file_bytes))
-    elif filename.endswith(".xlsx"):
-        return pd.read_excel(io.BytesIO(file_bytes))
-    else:
-        raise ValueError("Unsupported file type")
-
-@st.cache_data
-def auto_map_pl_cached(df_json):
-    # Dummy auto-mapping logic
-    df = pd.read_json(df_json)
-    revenue = float(df[df.columns[-1]].sum())  # Just a placeholder
-    return revenue, 0.0, 0.0, 0.0, 0.0
-
-def save_history(row):
-    conn = sqlite3.connect(HISTORY_DB)
-    c = conn.cursor()
-    keys = ','.join(row.keys())
-    qmarks = ','.join(['?']*len(row))
-    c.execute(f"INSERT INTO income_tax_history ({keys}) VALUES ({qmarks})", tuple(row.values()))
-    conn.commit()
-    conn.close()
-
-def validate_and_build_return(form_code, payload):
-    # Validate required fields
-    for k, v in payload.items():
-        if v is None or (isinstance(v, str) and not v.strip()):
-            raise ValueError(f"Missing value for {k}")
-    # Build DataFrame
-    df = pd.DataFrame([payload])
-    return df
-
-# ---------------------------
-# Tabs: Login / Sign Up
-# ---------------------------
-tab_login, tab_signup = st.tabs(["Login / Renew", "Sign Up"])
-
-# ---------------------------
-# LOGIN / RENEW
-# ---------------------------
-with tab_login:
-    st.subheader("🔑 Login / Renew Subscription")
-    login_username = st.text_input("Username", key="login_user_tab")
-    login_password = st.text_input("Password", type="password", key="login_pass_tab")
-
-    if st.button("Login / Renew", key="login_btn_tab"):
-        rec = get_user_record(login_username)
-        if not rec:
-            st.error("Unknown user")
-        else:
-            stored_hash, salt, expiry, plan = rec[1], rec[2], rec[3], rec[4]
-            if hash_with_salt(login_password, salt) == stored_hash:
-                st.session_state["authenticated"] = True
-                st.session_state["current_user"] = login_username
-                st.session_state["subscription_active"] = check_subscription_db(login_username)
-                st.session_state["plan"] = plan
-                st.success(f"Welcome {login_username} 👋")
-
-                if not st.session_state["subscription_active"]:
-                    st.warning("🚨 Your subscription is inactive. Choose a plan to activate below.")
+def show_auth_ui():
+    tab_login, tab_signup = st.tabs(["Login / Renew", "Sign Up"])
+    with tab_login:
+        st.subheader("🔑 Login / Renew Subscription")
+        login_username = st.text_input("Username", key="login_user_tab")
+        login_password = st.text_input("Password", type="password", key="login_pass_tab")
+        if st.button("Login / Renew", key="login_btn_tab"):
+            rec = get_user_record(login_username)
+            if not rec:
+                st.error("Unknown user")
             else:
-                st.error("Incorrect password")
-
-    # Subscription renewal
-    if st.session_state.get("authenticated") and not st.session_state["subscription_active"]:
-        selected_plan = st.selectbox(
-            "Select a subscription plan", 
-            list(SUBSCRIPTION_PLANS.keys()), 
-            key="login_plan_tab"
-        )
-        if st.button("Subscribe via MTN/Airtel", key="pay_btn_tab"):
-            plan_info = SUBSCRIPTION_PLANS[selected_plan]
-            pay_link = create_payment_link(st.session_state["current_user"], amount=plan_info["amount"])
-            if pay_link:
+                stored_hash, salt, expiry, plan = rec[1], rec[2], rec[3], rec[4]
+                if hash_with_salt(login_password, salt) == stored_hash:
+                    st.session_state["authenticated"] = True
+                    st.session_state["current_user"] = login_username
+                    st.session_state["subscription_active"] = check_subscription(login_username)
+                    st.session_state["plan"] = plan
+                    st.success(f"Welcome {login_username} 👋")
+                    if not st.session_state["subscription_active"]:
+                        st.warning("🚨 Your subscription is inactive. Choose a plan to activate below.")
+                else:
+                    st.error("Incorrect password")
+        if st.session_state.get("authenticated") and not st.session_state["subscription_active"]:
+            selected_plan = st.selectbox(
+                "Select a subscription plan", 
+                list(SUBSCRIPTION_PLANS.keys()), 
+                key="login_plan_tab"
+            )
+            if st.button("Subscribe via MTN/Airtel", key="pay_btn_tab"):
+                plan_info = SUBSCRIPTION_PLANS[selected_plan]
+                pay_link = f"https://pay.example.com/{st.session_state['current_user']}?amount={plan_info['amount']}"
                 st.markdown(f"[Click here to pay via MTN/Airtel]({pay_link})")
                 st.session_state["payment_pending"] = True
                 st.session_state["pending_plan"] = selected_plan
-
-# ---------------------------
-# SIGN UP
-# ---------------------------
-with tab_signup:
-    st.subheader("📝 Sign Up & Subscribe")
-    signup_username = st.text_input("Choose a username", key="signup_user_tab")
-    signup_password = st.text_input("Choose a password", type="password", key="signup_pass_tab")
-    signup_plan = st.selectbox(
-        "Choose a subscription plan", 
-        list(SUBSCRIPTION_PLANS.keys()), 
-        key="signup_plan_tab"
-    )
-
-    if st.button("Sign Up & Subscribe", key="signup_btn_tab"):
-        if get_user_record(signup_username):
-            st.error("Username already exists")
-        else:
-            salt = rand_salt()
-            hashed = hash_with_salt(signup_password, salt)
-            add_user_to_db(signup_username, hashed, salt, expiry=None, plan=signup_plan)
-            st.success("Account created! Proceed to payment.")
-            plan_info = SUBSCRIPTION_PLANS[signup_plan]
-            pay_link = create_payment_link(signup_username, amount=plan_info["amount"])
-            if pay_link:
+    with tab_signup:
+        st.subheader("📝 Sign Up & Subscribe")
+        signup_username = st.text_input("Choose a username", key="signup_user_tab")
+        signup_password = st.text_input("Choose a password", type="password", key="signup_pass_tab")
+        signup_plan = st.selectbox(
+            "Choose a subscription plan", 
+            list(SUBSCRIPTION_PLANS.keys()), 
+            key="signup_plan_tab"
+        )
+        if st.button("Sign Up & Subscribe", key="signup_btn_tab"):
+            if get_user_record(signup_username):
+                st.error("Username already exists")
+            else:
+                salt = rand_salt()
+                hashed = hash_with_salt(signup_password, salt)
+                add_user_to_db(signup_username, hashed, salt, expiry=None, plan=signup_plan)
+                st.success("Account created! Proceed to payment.")
+                plan_info = SUBSCRIPTION_PLANS[signup_plan]
+                pay_link = f"https://pay.example.com/{signup_username}?amount={plan_info['amount']}"
                 st.markdown(f"[Click here to pay via MTN/Airtel]({pay_link})")
                 st.session_state["payment_pending"] = True
                 st.session_state["pending_plan"] = signup_plan
 
-# ---------------------------
-# POST-PAYMENT CONFIRMATION
-# ---------------------------
-if st.session_state.get("authenticated") and st.session_state.get("payment_pending"):
+if not st.session_state["authenticated"]:
+    show_auth_ui()
+    st.stop()
+
+if st.session_state.get("payment_pending"):
     st.info("Waiting for payment confirmation...")
     if st.button("Confirm Payment (Demo)"):
         plan_info = SUBSCRIPTION_PLANS[st.session_state["pending_plan"]]
-        update_subscription_db(st.session_state["current_user"], days=plan_info["days"], plan=st.session_state["pending_plan"])
+        update_subscription(st.session_state["current_user"], days=plan_info["days"], plan=st.session_state["pending_plan"])
         st.session_state["subscription_active"] = True
         st.session_state["payment_pending"] = False
         st.success(f"✅ Subscription activated for {st.session_state['pending_plan']}!")
-        show_tax_module()
 
-# ---------------------------
-# LOGGED-IN VIEW
-# ---------------------------
 if st.session_state["authenticated"] and st.session_state["subscription_active"]:
     st.sidebar.write(f"Welcome {st.session_state['current_user']} 👋")
-    if st.button("Logout", key="logout_btn_tab"):
-        st.session_state["authenticated"] = False
-        st.session_state["current_user"] = None
-        st.session_state["subscription_active"] = False
-        st.session_state["plan"] = None
-        st.session_state["payment_pending"] = False
-        st.session_state["pending_plan"] = None
-    show_tax_module()
+    if st.sidebar.button("Logout"):
+        for k in ["authenticated", "current_user", "subscription_active", "plan", "payment_pending", "pending_plan"]:
+            st.session_state[k] = False if k == "authenticated" else None
+        st.experimental_rerun()
 
 # ---------------------------
-# Tax computation & other utilities (kept as in your original file)
+# Sidebar Configuration
 # ---------------------------
-
-def compute_individual_tax_brackets(taxable_income: float, brackets: List[Dict]) -> float:
-    if taxable_income <= 0:
-        return 0.0
-    tax = 0.0
-    for i, b in enumerate(brackets):
-        threshold = b["threshold"]
-        rate = b["rate"]
-        fixed = b.get("fixed", 0.0)
-        next_threshold = brackets[i + 1]["threshold"] if i + 1 < len(brackets) else None
-
-        if taxable_income > threshold:
-            upper = taxable_income if next_threshold is None else min(taxable_income, next_threshold)
-            taxable_slice = max(0.0, upper - threshold)
-            tax = fixed + taxable_slice * rate
-        else:
-            break
-    return round(max(0.0, tax), 2)
-
-
-def compute_company_tax(taxable_income: float, company_rate: float = 0.30) -> float:
-    if taxable_income <= 0:
-        return 0.0
-    return round(taxable_income * company_rate, 2)
-
-
-def apply_credits_and_rebates(gross_tax: float, credits_wht: float, credits_foreign: float, rebates: float) -> float:
-    return max(0.0, gross_tax - credits_wht - credits_foreign - rebates)
-
-# (keep URA_SCHEMAS, harmonize_tb, audit_findings, etc. unchanged)
-
-URA_SCHEMAS = {
-    "DT-2001": {
-        "title": "Income Tax Return Form for Individual with Business Income",
-        "fields": [
-            ("TIN", "str"),
-            ("Taxpayer Name", "str"),
-            ("Period", "str"),
-            ("Year", "int"),
-            ("Business Income (UGX)", "float"),
-            ("Allowable Deductions (UGX)", "float"),
-            ("Capital Allowances (UGX)", "float"),
-            ("Exemptions (UGX)", "float"),
-            ("Taxable Income (UGX)", "float"),
-            ("Gross Tax (UGX)", "float"),
-            ("WHT Credits (UGX)", "float"),
-            ("Foreign Tax Credit (UGX)", "float"),
-            ("Rebates (UGX)", "float"),
-            ("Net Tax Payable (UGX)", "float"),
-        ],
-    },
-    # ... other schemas kept as-is (DT-2002, DT-2003, DT-2004)
-}
-
-DEFAULT_CONTROL_MAP = pd.DataFrame([
-    ["Cash & Bank", "Debit", r"(?i)cash|bank|current account|cash at hand", 50_000],
-    ["Accounts Receivable", "Debit", r"(?i)ar|trade receivable|debtors", 50_000],
-    ["Inventory", "Debit", r"(?i)inventory|stock", 50_000],
-    ["Accounts Payable", "Credit", r"(?i)ap|trade payable|creditors", 50_000],
-    ["VAT Payable", "Credit", r"(?i)vat|output vat|vat payable", 50_000],
-    ["VAT Receivable", "Debit", r"(?i)input vat|vat receivable", 50_000],
-    ["PAYE Payable", "Credit", r"(?i)paye|pay as you earn", 50_000],
-    ["WHT Receivable", "Debit", r"(?i)withholding tax (receivable|asset)|wht receivable|wht asset", 50_000],
-    ["Income Tax Payable", "Credit", r"(?i)income tax payable|corporation tax payable", 50_000],
-    ["Share Capital", "Credit", r"(?i)share capital|stated capital", 50_000],
-    ["Retained Earnings", "Credit", r"(?i)retained earnings|accumulated (profit|loss)", 50_000],
-], columns=["Category", "NormalBalance", "Patterns", "MaterialityUGX"])
-
-# (keep harmonize_tb, re_sum, match_control_amounts, pnl_totals_from_tb, audit_findings unchanged)
-
-def harmonize_tb(df: pd.DataFrame) -> pd.DataFrame:
-    cols = {c.lower().strip(): c for c in df.columns}
-    df2 = df.copy()
-    for wanted in ["account", "description"]:
-        if wanted in cols and "account" not in df2.columns:
-            df2.rename(columns={cols[wanted]: "Account"}, inplace=True)
-
-    debit_col = None
-    credit_col = None
-    for c in df2.columns:
-        cl = c.lower()
-        if "debit" in cl and debit_col is None:
-            debit_col = c
-        if "credit" in cl and credit_col is None:
-            credit_col = c
-
-    if debit_col and credit_col:
-        df2["Debit"] = pd.to_numeric(df2[debit_col], errors="coerce").fillna(0.0)
-        df2["Credit"] = pd.to_numeric(df2[credit_col], errors="coerce").fillna(0.0)
-        df2["Amount"] = df2["Debit"] - df2["Credit"]
-    else:
-        amt_col = None
-        for c in df2.columns:
-            if c.lower() in ["amount", "balance", "closing balance", "ending balance", "net"]:
-                amt_col = c
-                break
-        if amt_col is None:
-            num_cols = df2.select_dtypes(include="number").columns
-            if len(num_cols) > 0:
-                amt_col = num_cols[-1]
-        if amt_col is None:
-            raise ValueError("Could not detect Amount/Debit/Credit columns in Trial Balance.")
-        df2["Amount"] = pd.to_numeric(df2[amt_col], errors="coerce").fillna(0.0)
-        df2["Debit"] = df2["Amount"].clip(lower=0)
-        df2["Credit"] = (-df2["Amount"]).clip(lower=0)
-
-    if "Account" not in df2.columns:
-        df2["Account"] = df2.iloc[:, 0].astype(str)
-
-    return df2[["Account", "Debit", "Credit", "Amount"]]
-
-
-def re_sum(series: pd.Series) -> float:
-    return float(pd.to_numeric(series, errors="coerce").fillna(0.0).sum())
-
-
-def match_control_amounts(tb_df: pd.DataFrame, control_map: pd.DataFrame) -> pd.DataFrame:
-    out = []
-    for _, row in control_map.iterrows():
-        cat = row["Category"]
-        pat = str(row["Patterns"]).strip()
-        nb = row["NormalBalance"]
-        materiality = float(row["MaterialityUGX"])
-        if not pat:
-            amt = 0.0
-        else:
-            mask = tb_df["Account"].astype(str).str.contains(pat, regex=True, na=False)
-            amt = re_sum(tb_df.loc[mask, "Amount"])
-        expected_sign = 1 if nb.lower().startswith("debit") else -1
-        signed_ok = (amt == 0) or (np.sign(amt) == expected_sign)
-        exception = 0.0
-        if not signed_ok:
-            exception = abs(amt)
-        elif abs(amt) < materiality:
-            exception = 0.0
-        else:
-            exception = 0.0
-        out.append({
-            "Category": cat,
-            "NormalBalance": nb,
-            "MatchedAmount": amt,
-            "ExpectedSign": "Debit" if expected_sign == 1 else "Credit",
-            "SignOK": signed_ok,
-            "MaterialityUGX": materiality,
-            "ExceptionUGX": exception
-        })
-    return pd.DataFrame(out)
-
-
-def pnl_totals_from_tb(tb_df: pd.DataFrame) -> Dict[str, float]:
-    acc = tb_df["Account"].astype(str)
-    is_income = acc.str.contains(r"(?i)(income|revenue|sales|gain)")
-    is_cogs = acc.str.contains(r"(?i)cogs|cost of goods|cost of sales")
-    is_opex = acc.str.contains(r"(?i)expense|utilities|rent|salary|transport|admin|repairs|maintenance")
-    is_other_income = acc.str.contains(r"(?i)other income|finance income|interest income|dividend income|gain")
-    is_other_exp = acc.str.contains(r"(?i)other expense|finance cost|interest expense|loss")
-
-    amt = tb_df["Amount"].astype(float)
-
-    revenue = -re_sum(amt[is_income])
-    cogs = re_sum(amt[is_cogs])
-    opex = re_sum(amt[is_opex])
-    other_income = -re_sum(amt[is_other_income])
-    other_expenses = re_sum(amt[is_other_exp])
-
-    return dict(revenue=revenue, cogs=cogs, opex=opex, other_income=other_income, other_expenses=other_expenses)
-
-
-def audit_findings(tb_df: pd.DataFrame,
-                   control_map: pd.DataFrame,
-                   mapped_pl: Dict[str, float],
-                   materiality_total_ugx: float = 100_000.0) -> Dict[str, pd.DataFrame]:
-    debit_total = re_sum(tb_df["Debit"])
-    credit_total = re_sum(tb_df["Credit"])
-    tb_diff = round(debit_total - credit_total, 2)
-
-    tb_integrity = pd.DataFrame([{
-        "TotalDebit": debit_total,
-        "TotalCredit": credit_total,
-        "Difference(should be 0)": tb_diff,
-        "Pass": abs(tb_diff) < 1e-2
-    }])
-
-    ctrl = match_control_amounts(tb_df, control_map)
-
-    tb_pl = pnl_totals_from_tb(tb_df)
-    pl_comp = pd.DataFrame([
-        {"Item": "Revenue", "TB": tb_pl["revenue"], "Mapped": mapped_pl.get("revenue", 0.0)},
-        {"Item": "COGS", "TB": tb_pl["cogs"], "Mapped": mapped_pl.get("cogs", 0.0)},
-        {"Item": "OPEX", "TB": tb_pl["opex"], "Mapped": mapped_pl.get("opex", 0.0)},
-        {"Item": "Other Income", "TB": tb_pl["other_income"], "Mapped": mapped_pl.get("other_income", 0.0)},
-        {"Item": "Other Expenses", "TB": tb_pl["other_expenses"], "Mapped": mapped_pl.get("other_expenses", 0.0)},
-    ])
-    pl_comp["Delta"] = pl_comp["Mapped"] - pl_comp["TB"]
-    pl_comp["Material"] = pl_comp["Delta"].abs() >= materiality_total_ugx
-
-    exceptions = []
-    if not tb_integrity["Pass"].iloc[0]:
-        exceptions.append({"Area": "TB Integrity", "Issue": "Debits != Credits", "Amount": tb_diff})
-
-    for _, r in ctrl.iterrows():
-        if not bool(r["SignOK"]):
-            exceptions.append({
-                "Area": f"Control: {r['Category']}",
-                "Issue": f"Sign mismatch (Expected {r['ExpectedSign']})",
-                "Amount": float(r["MatchedAmount"])
-            })
-        elif abs(float(r["MatchedAmount"])) >= float(r["MaterialityUGX"]):
-            pass
-
-    for _, r in pl_comp.iterrows():
-        if bool(r["Material"]):
-            exceptions.append({
-                "Area": f"P&L Reconciliation — {r['Item']}",
-                "Issue": "Delta exceeds materiality",
-                "Amount": float(r["Delta"])
-            })
-
-    exceptions_df = pd.DataFrame(exceptions) if exceptions else pd.DataFrame(columns=["Area", "Issue", "Amount"])
-    notable_ctrl = ctrl.loc[ctrl["MatchedAmount"].abs() >= ctrl["MaterialityUGX"], ["Category", "MatchedAmount", "ExpectedSign"]].copy()
-
-    return {
-        "tb_integrity": tb_integrity,
-        "control_accounts": ctrl,
-        "pl_comparison": pl_comp,
-        "exceptions": exceptions_df,
-        "notable_controls": notable_ctrl
-    }
-
-# ---------------------------
-# AUTHENTICATED USER VIEW
-# ---------------------------
-if st.session_state["authenticated"]:
-    cur_user = st.session_state["current_user"]
-    st.sidebar.write(f"Welcome {cur_user} 👋")
-    if st.session_state["subscription_active"]:
-        st.success("✅ Subscription active! Access granted.")
-        show_tax_module()  # Your main tax app function
-    else:
-        st.warning("🚨 Subscription inactive. Please subscribe to access full features.")
-              
-# ----------------------------
-# Sidebar configuration
-# ----------------------------
 with st.sidebar:
     st.header("⚙️ Configuration")
+    taxpayer_type = st.selectbox("Taxpayer Type", ["company", "individual"], key="sb_taxpayer_type")
+    tax_year = st.number_input("Year", min_value=2000, max_value=datetime.now().year, value=datetime.now().year, step=1, key="sb_tax_year")
+    period_label = st.text_input("Period label (e.g., FY2024/25)", value=f"FY{tax_year}", key="sb_period_label")
+    company_rate = st.number_input("Company Income Tax Rate", min_value=0.0, max_value=1.0, value=0.30, step=0.01, key="sb_company_rate")
+    audit_materiality = st.number_input("P&L Reconciliation Materiality", min_value=0.0, value=100_000.0, step=10_000.0, key="sb_audit_mat")
 
-    taxpayer_type = st.selectbox(
-        "Taxpayer Type",
-        ["company", "individual"],
-        key="sb_taxpayer_type"
-    )
-
-    tax_year = st.number_input(
-        "Year",
-        min_value=2000,
-        max_value=datetime.now().year,
-        value=datetime.now().year,
-        step=1,
-        key="sb_tax_year"
-    )
-
-    period_label = st.text_input(
-        "Period label (e.g., FY2024/25)",
-        value=f"FY{tax_year}",
-        key="sb_period_label"
-    )
-
-    # Company Rate
-    st.markdown("### Company Rate")
-    company_rate = st.number_input(
-        "Company Income Tax Rate",
-        min_value=0.0,
-        max_value=1.0,
-        value=0.30,
-        step=0.01,
-        key="sb_company_rate"
-    )
-
-    # Audit Materiality
-    st.markdown("### Audit Materiality (UGX)")
-    audit_materiality = st.number_input(
-        "P&L Reconciliation Materiality",
-        min_value=0.0,
-        value=100_000.0,
-        step=10_000.0,
-        key="sb_audit_mat"
-    )
-
-    # Control Account Map
-    st.markdown("### Control Account Map (editable)")
-    if "control_map" not in st.session_state:
-        st.session_state["control_map"] = DEFAULT_CONTROL_MAP.copy()
-
-    control_map = st.data_editor(
-        st.session_state["control_map"],
-        key="sb_control_map_editor",
-        use_container_width=True,
-        num_rows="dynamic"
-    )
-    st.session_state["control_map"] = control_map
-
-# ----------------------------
-# Individual tax brackets (fixed internally, not editable in UI)
-# ----------------------------
-individual_brackets = [
-    {"threshold": 0.0, "rate": 0.0, "fixed": 0.0},
-    {"threshold": 2_820_000.0, "rate": 0.1, "fixed": 0.0},
-    {"threshold": 4_020_000.0, "rate": 0.2, "fixed": 120_000.0},
-    {"threshold": 4_920_000.0, "rate": 0.3, "fixed": 360_000.0},
-    {"threshold": 10_000_000.0, "rate": 0.4, "fixed": 1_830_000.0}
-]
-
-# ----------------------------
-# Tabs
-# ----------------------------
-tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
-    "1) Data Import", "2) P&L Mapping", "3) Compute & Credits", "4) Dashboard", "5) Export & URA Forms", "6) Audit & Controls"
+# ---------------------------
+# Main Tabs
+# ---------------------------
+tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8, tab9, tab10, tab11 = st.tabs([
+    "1) Data Import", "2) P&L Mapping", "3) Compute & Credits", "4) Dashboard", "5) Export & URA Forms",
+    "6) Audit & Controls", "7) VAT", "8) Presumptive Tax", "9) Payroll", "10) Withholding Tax (WHT)", "11) Transfer Pricing"
 ])
 
-# Initialize session state placeholders
-if "pl_df" not in st.session_state:
-    st.session_state["pl_df"] = None
-if "mapped_values" not in st.session_state:
-    st.session_state["mapped_values"] = {}
-if "addbacks_values" not in st.session_state:
-    st.session_state["addbacks_values"] = {}
-if "allowables_values" not in st.session_state:
-    st.session_state["allowables_values"] = {}
-
-# ----------------------------
+# ---------------------------
 # Tab 1: Data Import
-# ----------------------------
+# ---------------------------
 with tab1:
     st.subheader("📂 Upload Financials (CSV/XLSX) or Connect to QuickBooks (Optional)")
-
     # Simulated QuickBooks connection button
     def qb_connect_button():
         import pandas as pd
-        # Temporary placeholder until actual connection logic is implemented
         return pd.DataFrame()  # empty DataFrame as placeholder
 
-    # Call the QuickBooks connect button (simulated)
     qb_df = qb_connect_button()
-
-    # File uploader
     uploaded = st.file_uploader(
         "Upload P&L / Trial Balance (CSV or Excel)",
         type=["csv", "xlsx"],
         help="Upload a Profit & Loss or Trial Balance export from your accounting system",
         key="t1_file_uploader"
     )
-
     df = None
-
-    # Prefer QuickBooks data if available
     if qb_df is not None and not qb_df.empty:
         df = qb_df
-
-    # Parse uploaded file if provided
     if uploaded is not None:
         uploaded_bytes = uploaded.getvalue()
         try:
-            df = parse_financial_file_bytes(uploaded_bytes, uploaded.name)
+            if uploaded.name.endswith(".csv"):
+                df = pd.read_csv(io.BytesIO(uploaded_bytes))
+            elif uploaded.name.endswith(".xlsx"):
+                df = pd.read_excel(io.BytesIO(uploaded_bytes))
+            else:
+                raise ValueError("Unsupported file type")
         except Exception as e:
             st.error(f"Failed to parse file: {e}")
             df = None
-
-    # Display data preview
     if df is not None and not df.empty:
         st.session_state["pl_df"] = df
         st.write("### Preview (first 50 rows)")
         st.dataframe(df.head(50), use_container_width=True)
-
         if st.button("Auto-Map P&L (fast)", key="t1_btn_automap"):
             df_json = df.head(10000).to_json()
-            revenue, cogs, opex, other_income, other_expenses = auto_map_pl_cached(df_json)
+            # Dummy auto-mapping logic
+            revenue = float(df[df.columns[-1]].sum())
             st.session_state["mapped_values"] = {
-                "revenue": revenue,
-                "cogs": cogs,
-                "opex": opex,
-                "other_income": other_income,
-                "other_expenses": other_expenses
+                "revenue": revenue, "cogs": 0.0, "opex": 0.0, "other_income": 0.0, "other_expenses": 0.0
             }
             st.success("Auto-map completed — check P&L Mapping tab to adjust/confirm.")
     else:
         st.info("Upload a file or use QuickBooks (simulated) to proceed.")
 
-# ----------------------------
+# ---------------------------
 # Tab 2: P&L Mapping
-# ----------------------------
+# ---------------------------
 with tab2:
     st.subheader("🧭 Map P&L → Revenue / COGS / OPEX / Other")
-    if st.session_state["pl_df"] is None:
+    if st.session_state.get("pl_df") is None:
         st.warning("No data found. Go to 'Data Import' first or manually enter P&L below.")
     else:
         df = st.session_state["pl_df"].copy()
         st.write("Auto-detect common columns (Account/Amount) or provide manual values.")
         if st.button("Auto-Map (cached)", key="t2_btn_automap"):
             df_json = df.head(10000).to_json()
-            revenue, cogs, opex, other_income, other_expenses = auto_map_pl_cached(df_json)
+            revenue = float(df[df.columns[-1]].sum())
             st.session_state["mapped_values"] = {
-                "revenue": revenue, "cogs": cogs, "opex": opex,
-                "other_income": other_income, "other_expenses": other_expenses
+                "revenue": revenue, "cogs": 0.0, "opex": 0.0, "other_income": 0.0, "other_expenses": 0.0
             }
             st.success("Auto-mapping complete (you can override the values).")
-
     mv = st.session_state.get("mapped_values", {})
     st.markdown("#### Manual / Override entries (edit and press Update)")
     with st.form("t2_form_pnl_manual", clear_on_submit=False):
@@ -731,14 +320,179 @@ with tab2:
             "other_income": other_income, "other_expenses": other_expenses
         }
         st.success("P&L mapping updated.")
-
     mv = st.session_state.get("mapped_values", {})
     pbit_manual = (mv.get("revenue", 0.0) + mv.get("other_income", 0.0)) - (mv.get("cogs", 0.0) + mv.get("opex", 0.0) + mv.get("other_expenses", 0.0))
     st.metric("Derived Profit / (Loss) Before Allowances (PBIT)", f"UGX {pbit_manual:,.2f}")
 
-# ----------------------------
+# ---------------------------
+# Tab 1: Data Import
+# ---------------------------
+with tab1:
+    st.subheader("📂 Upload Financials (CSV/XLSX) or Connect to QuickBooks (Optional)")
+    # Simulated QuickBooks connection button
+    def qb_connect_button():
+        import pandas as pd
+        return pd.DataFrame()  # empty DataFrame as placeholder
+
+    qb_df = qb_connect_button()
+    uploaded = st.file_uploader(
+        "Upload P&L / Trial Balance (CSV or Excel)",
+        type=["csv", "xlsx"],
+        help="Upload a Profit & Loss or Trial Balance export from your accounting system",
+        key="t1_file_uploader"
+    )
+    df = None
+    if qb_df is not None and not qb_df.empty:
+        df = qb_df
+    if uploaded is not None:
+        uploaded_bytes = uploaded.getvalue()
+        try:
+            if uploaded.name.endswith(".csv"):
+                df = pd.read_csv(io.BytesIO(uploaded_bytes))
+            elif uploaded.name.endswith(".xlsx"):
+                df = pd.read_excel(io.BytesIO(uploaded_bytes))
+            else:
+                raise ValueError("Unsupported file type")
+        except Exception as e:
+            st.error(f"Failed to parse file: {e}")
+            df = None
+    if df is not None and not df.empty:
+        st.session_state["pl_df"] = df
+        st.write("### Preview (first 50 rows)")
+        st.dataframe(df.head(50), use_container_width=True)
+        if st.button("Auto-Map P&L (fast)", key="t1_btn_automap"):
+            df_json = df.head(10000).to_json()
+            # Dummy auto-mapping logic
+            revenue = float(df[df.columns[-1]].sum())
+            st.session_state["mapped_values"] = {
+                "revenue": revenue, "cogs": 0.0, "opex": 0.0, "other_income": 0.0, "other_expenses": 0.0
+            }
+            st.success("Auto-map completed — check P&L Mapping tab to adjust/confirm.")
+    else:
+        st.info("Upload a file or use QuickBooks (simulated) to proceed.")
+
+# ---------------------------
+# Tab 2: P&L Mapping
+# ---------------------------
+with tab2:
+    st.subheader("🧭 Map P&L → Revenue / COGS / OPEX / Other")
+    if st.session_state.get("pl_df") is None:
+        st.warning("No data found. Go to 'Data Import' first or manually enter P&L below.")
+    else:
+        df = st.session_state["pl_df"].copy()
+        st.write("Auto-detect common columns (Account/Amount) or provide manual values.")
+        if st.button("Auto-Map (cached)", key="t2_btn_automap"):
+            df_json = df.head(10000).to_json()
+            revenue = float(df[df.columns[-1]].sum())
+            st.session_state["mapped_values"] = {
+                "revenue": revenue, "cogs": 0.0, "opex": 0.0, "other_income": 0.0, "other_expenses": 0.0
+            }
+            st.success("Auto-mapping complete (you can override the values).")
+    mv = st.session_state.get("mapped_values", {})
+    st.markdown("#### Manual / Override entries (edit and press Update)")
+    with st.form("t2_form_pnl_manual", clear_on_submit=False):
+        revenue = st.number_input("Revenue (UGX)", min_value=0.0, value=float(mv.get("revenue", 0.0)), step=1000.0, format="%.2f", key="t2_in_revenue")
+        cogs = st.number_input("COGS (UGX)", min_value=0.0, value=float(mv.get("cogs", 0.0)), step=1000.0, format="%.2f", key="t2_in_cogs")
+        opex = st.number_input("Operating Expenses (UGX)", min_value=0.0, value=float(mv.get("opex", 0.0)), step=1000.0, format="%.2f", key="t2_in_opex")
+        other_income = st.number_input("Other Income (UGX)", min_value=0.0, value=float(mv.get("other_income", 0.0)), step=1000.0, format="%.2f", key="t2_in_oi")
+        other_expenses = st.number_input("Other Expenses (UGX)", min_value=0.0, value=float(mv.get("other_expenses", 0.0)), step=1000.0, format="%.2f", key="t2_in_oe")
+        update_btn = st.form_submit_button("Update P&L Mapping", use_container_width=True)
+    if update_btn:
+        st.session_state["mapped_values"] = {
+            "revenue": revenue, "cogs": cogs, "opex": opex,
+            "other_income": other_income, "other_expenses": other_expenses
+        }
+        st.success("P&L mapping updated.")
+    mv = st.session_state.get("mapped_values", {})
+    pbit_manual = (mv.get("revenue", 0.0) + mv.get("other_income", 0.0)) - (mv.get("cogs", 0.0) + mv.get("opex", 0.0) + mv.get("other_expenses", 0.0))
+    st.metric("Derived Profit / (Loss) Before Allowances (PBIT)", f"UGX {pbit_manual:,.2f}")
+
+# ---------------------------
+# Tab 1: Data Import
+# ---------------------------
+with tab1:
+    st.subheader("📂 Upload Financials (CSV/XLSX) or Connect to QuickBooks (Optional)")
+    # Simulated QuickBooks connection button
+    def qb_connect_button():
+        import pandas as pd
+        return pd.DataFrame()  # empty DataFrame as placeholder
+
+    qb_df = qb_connect_button()
+    uploaded = st.file_uploader(
+        "Upload P&L / Trial Balance (CSV or Excel)",
+        type=["csv", "xlsx"],
+        help="Upload a Profit & Loss or Trial Balance export from your accounting system",
+        key="t1_file_uploader"
+    )
+    df = None
+    if qb_df is not None and not qb_df.empty:
+        df = qb_df
+    if uploaded is not None:
+        uploaded_bytes = uploaded.getvalue()
+        try:
+            if uploaded.name.endswith(".csv"):
+                df = pd.read_csv(io.BytesIO(uploaded_bytes))
+            elif uploaded.name.endswith(".xlsx"):
+                df = pd.read_excel(io.BytesIO(uploaded_bytes))
+            else:
+                raise ValueError("Unsupported file type")
+        except Exception as e:
+            st.error(f"Failed to parse file: {e}")
+            df = None
+    if df is not None and not df.empty:
+        st.session_state["pl_df"] = df
+        st.write("### Preview (first 50 rows)")
+        st.dataframe(df.head(50), use_container_width=True)
+        if st.button("Auto-Map P&L (fast)", key="t1_btn_automap"):
+            df_json = df.head(10000).to_json()
+            # Dummy auto-mapping logic
+            revenue = float(df[df.columns[-1]].sum())
+            st.session_state["mapped_values"] = {
+                "revenue": revenue, "cogs": 0.0, "opex": 0.0, "other_income": 0.0, "other_expenses": 0.0
+            }
+            st.success("Auto-map completed — check P&L Mapping tab to adjust/confirm.")
+    else:
+        st.info("Upload a file or use QuickBooks (simulated) to proceed.")
+
+# ---------------------------
+# Tab 2: P&L Mapping
+# ---------------------------
+with tab2:
+    st.subheader("🧭 Map P&L → Revenue / COGS / OPEX / Other")
+    if st.session_state.get("pl_df") is None:
+        st.warning("No data found. Go to 'Data Import' first or manually enter P&L below.")
+    else:
+        df = st.session_state["pl_df"].copy()
+        st.write("Auto-detect common columns (Account/Amount) or provide manual values.")
+        if st.button("Auto-Map (cached)", key="t2_btn_automap"):
+            df_json = df.head(10000).to_json()
+            revenue = float(df[df.columns[-1]].sum())
+            st.session_state["mapped_values"] = {
+                "revenue": revenue, "cogs": 0.0, "opex": 0.0, "other_income": 0.0, "other_expenses": 0.0
+            }
+            st.success("Auto-mapping complete (you can override the values).")
+    mv = st.session_state.get("mapped_values", {})
+    st.markdown("#### Manual / Override entries (edit and press Update)")
+    with st.form("t2_form_pnl_manual", clear_on_submit=False):
+        revenue = st.number_input("Revenue (UGX)", min_value=0.0, value=float(mv.get("revenue", 0.0)), step=1000.0, format="%.2f", key="t2_in_revenue")
+        cogs = st.number_input("COGS (UGX)", min_value=0.0, value=float(mv.get("cogs", 0.0)), step=1000.0, format="%.2f", key="t2_in_cogs")
+        opex = st.number_input("Operating Expenses (UGX)", min_value=0.0, value=float(mv.get("opex", 0.0)), step=1000.0, format="%.2f", key="t2_in_opex")
+        other_income = st.number_input("Other Income (UGX)", min_value=0.0, value=float(mv.get("other_income", 0.0)), step=1000.0, format="%.2f", key="t2_in_oi")
+        other_expenses = st.number_input("Other Expenses (UGX)", min_value=0.0, value=float(mv.get("other_expenses", 0.0)), step=1000.0, format="%.2f", key="t2_in_oe")
+        update_btn = st.form_submit_button("Update P&L Mapping", use_container_width=True)
+    if update_btn:
+        st.session_state["mapped_values"] = {
+            "revenue": revenue, "cogs": cogs, "opex": opex,
+            "other_income": other_income, "other_expenses": other_expenses
+        }
+        st.success("P&L mapping updated.")
+    mv = st.session_state.get("mapped_values", {})
+    pbit_manual = (mv.get("revenue", 0.0) + mv.get("other_income", 0.0)) - (mv.get("cogs", 0.0) + mv.get("opex", 0.0) + mv.get("other_expenses", 0.0))
+    st.metric("Derived Profit / (Loss) Before Allowances (PBIT)", f"UGX {pbit_manual:,.2f}")
+
+# ---------------------------
 # Tab 3: Compute & Credits
-# ----------------------------
+# ---------------------------
 with tab3:
     st.subheader("🧮 Compute Tax, Apply Credits & Exemptions")
 
@@ -760,107 +514,95 @@ with tab3:
         "PBIT": pbit
     }]).T, use_container_width=True)
 
-    # --- Addbacks (Disallowables)
+    # Addbacks (Disallowables)
     addbacks_labels = [
-        "Depreciation (Section 22(3)(b))","Amortisation","Redundancy",
-        "Domestic/Private Expenditure (Section 22(3)(a))",
-        "Capital Gain (Sections 22(1)(b), 47, 48)","Rental Income Loss (Section 22(1)(c))",
-        "Expenses Exceeding 50% of Rental Income (Section 22(2))",
-        "Capital Nature Expenditure (Section 22(3)(b))","Recoverable Expenditure (Section 22(3)(c))",
-        "Income Tax Paid Abroad (Section 22(3)(d))","Capitalised Income (Section 22(3)(e))",
-        "Gift Cost not in Recipient Income (Section 22(3)(f))","Fines or Penalties (Section 22(3)(g))",
-        "Employee Retirement Contributions (Section 22(3)(h))","Life Insurance Premiums (Section 22(3)(i))",
-        "Pension Payments (Section 22(3)(j))","Alimony / Allowance (Section 22(3)(k))",
-        "Suppliers without TIN > UGX5M (Section 22(3)(l))","EFRIS Suppliers w/o e-invoices (Section 22(3)(m))",
-        "Debt Obligation Principal (Section 25)","Interest on Capital Assets (Sections 22(3) & 50(2))",
-        "Interest on Fixed Capital (Section 25(1))","Bad Debts Recovered (Section 61)",
-        "General Provision for Bad Debts (Section 24)","Entertainment Income (Section 23)",
-        "Meal & Refreshment Expenses (Section 23)","Charitable Donations to Non-Exempt Orgs (Section 33(1))",
-        "Charitable Donations >5% Chargeable Income (Section 33(3))","Legal Fees",
-        "Legal Expenses - Capital Items (Section 50)","Legal Expenses - New Trade Rights",
-        "Legal Expenses - Breach of Law","Cost of Breach of Contract - Capital Account",
-        "Legal Expenses on Breach of Contract - Capital Account","Legal Expenses on Loan Renewals - Non-commercial",
-        "Bad Debts by Senior Employee/Management","General Provisions Bad Debts (FI Credit Classification)",
-        "Loss on Sale of Fixed Assets (Section 22(3)(b))","Loss on Other Capital Items (Section 22(3)(b))",
-        "Expenditure on Share Capital Increase (Section 22(3)(b))","Dividends Paid (Section 22(3)(d))",
-        "Provision for Bad Debts (Non-Financial Institutions) (Section 24)",
-        "Increase in Provision for Bad Debts (Section 24)","Debt Collection Expenses related to Capital Expenditure",
-        "Foreign Currency Debt Gains (Section 46(2))","Costs incidental to Capital Asset (Stamp Duty, Section 50)",
-        "Non-Business Expenses (Section 22)","Miscellaneous Staff Costs",
-        "Staff Costs - Commuting (Section 22(4)(b))","First Time Work Permits",
-        "Unrealised Foreign Exchange Losses (Section 46(3))","Foreign Currency Debt Losses (Section 46)",
-        "Education Expenditure (Non Section 32)","Donations (Non Section 33)",
-        "Decommissioning Expenditure by Licensee (Section 99(2))","Telephone Costs (10%)",
-        "Revaluation Loss","Interest Expense on Treasury Bills (Section 139(e))",
-        "Burial Expenses (Section 22(3)(b))","Subscription (Section 22(3)(a))",
-        "Interest on Directors Debit Balances (Section 22(3)(a))","Entertainment Expenses (Section 23)",
-        "Gifts (Section 22(3)(f))","Dividends Paid (duplicate)","Income Carried to Reserve Fund (Section 22(3)(e))",
-        "Impairment Losses on Loans and Advances","Interest Expense on Treasury Bonds (Section 139(e))",
-        "Staff Leave Provisions (Section 22(4)(b))","Increase in Gratuity","Balancing Charge (Sections 27(5) & 18(1))"
+        "Depreciation", "Amortisation", "Redundancy", "Domestic/Private Expenditure",
+        "Capital Gain", "Rental Income Loss", "Expenses Exceeding 50% of Rental Income",
+        "Capital Nature Expenditure", "Recoverable Expenditure", "Income Tax Paid Abroad",
+        "Capitalised Income", "Gift Cost not in Recipient Income", "Fines or Penalties",
+        "Employee Retirement Contributions", "Life Insurance Premiums", "Pension Payments",
+        "Alimony / Allowance", "Suppliers without TIN > UGX5M", "EFRIS Suppliers w/o e-invoices",
+        "Debt Obligation Principal", "Interest on Capital Assets", "Interest on Fixed Capital",
+        "Bad Debts Recovered", "General Provision for Bad Debts", "Entertainment Income",
+        "Meal & Refreshment Expenses", "Charitable Donations to Non-Exempt Orgs",
+        "Charitable Donations >5% Chargeable Income", "Legal Fees", "Legal Expenses - Capital Items",
+        "Legal Expenses - New Trade Rights", "Legal Expenses - Breach of Law",
+        "Cost of Breach of Contract - Capital Account", "Legal Expenses on Breach of Contract - Capital Account",
+        "Legal Expenses on Loan Renewals - Non-commercial", "Bad Debts by Senior Employee/Management",
+        "General Provisions Bad Debts", "Loss on Sale of Fixed Assets", "Loss on Other Capital Items",
+        "Expenditure on Share Capital Increase", "Dividends Paid", "Provision for Bad Debts",
+        "Increase in Provision for Bad Debts", "Debt Collection Expenses related to Capital Expenditure",
+        "Foreign Currency Debt Gains", "Costs incidental to Capital Asset", "Non-Business Expenses",
+        "Miscellaneous Staff Costs", "Staff Costs - Commuting", "First Time Work Permits",
+        "Unrealised Foreign Exchange Losses", "Foreign Currency Debt Losses", "Education Expenditure",
+        "Donations", "Decommissioning Expenditure by Licensee", "Telephone Costs (10%)",
+        "Revaluation Loss", "Interest Expense on Treasury Bills", "Burial Expenses",
+        "Subscription", "Interest on Directors Debit Balances", "Entertainment Expenses",
+        "Gifts", "Dividends Paid (duplicate)", "Income Carried to Reserve Fund",
+        "Impairment Losses on Loans and Advances", "Interest Expense on Treasury Bonds",
+        "Staff Leave Provisions", "Increase in Gratuity", "Balancing Charge"
     ]
-
     with st.expander("Addbacks (Disallowable Expenses) — click to edit and save", expanded=False):
         with st.form("t3_form_addbacks"):
             ab_values = {}
             for label in addbacks_labels:
                 key = f"t3_ab_{re.sub(r'[^a-z0-9]+', '_', label.lower())}"
-                default_val = float(st.session_state["addbacks_values"].get(key, 0.0))
+                default_val = float(st.session_state.get("addbacks_values", {}).get(key, 0.0))
                 ab_values[key] = st.number_input(label, min_value=0.0, value=default_val, format="%.2f", key=key + "_widget")
             addbacks_submit = st.form_submit_button("Save Addbacks", use_container_width=True)
             if addbacks_submit:
+                if "addbacks_values" not in st.session_state:
+                    st.session_state["addbacks_values"] = {}
                 st.session_state["addbacks_values"].update(ab_values)
                 st.success("Addbacks saved to session.")
 
-    total_addbacks = sum(float(v) for v in st.session_state["addbacks_values"].values())
+    total_addbacks = sum(float(v) for v in st.session_state.get("addbacks_values", {}).values())
     adjusted_profit = pbit + total_addbacks
     st.markdown(f"### Adjusted Profit (PBIT + Addbacks): UGX {adjusted_profit:,.2f}")
 
-    # --- Allowables (Deductions)
+    # Allowables (Deductions)
     allowables_labels = [
-        "Wear & Tear (Section 27(1))","Industrial Building Allowance (5% for 20 years) (Section 28(1))",
-        "Startup Costs (25%) (Section 28)","Reverse VAT (Section 22(1)(a))",
-        "Listing Business with Uganda Stock Exchange (Section 29(2)(a))",
-        "Registration Fees, Accountant Fees, Legal Fees, Advertising, Training (Section 29(2)(b))",
-        "Expenses in Acquiring Intangible Asset (Section 30(1))","Disposal of Intangible Asset (Section 30(2))",
-        "Minor Capital Expenditure (Minor Capex) (Section 26(2))","Revenue Expenditures - Repairs & Maintenance (Section 26)",
-        "Expenditure on Scientific Research (Section 31(1))","Expenditure on Training (Education) (Section 32(1))",
-        "Charitable Donations to Exempt Organisations (Section 33(1))","Charitable Donations Up to 5% Chargeable Income (Section 33(3))",
-        "Expenditure on Farming (Section 34)","Apportionment of Deductions (Section 35)",
-        "Carry Forward Losses from Previous Period (Section 36(1))","Carry Forward Losses Upto 50% after 7 Years (Section 36(6))",
-        "Disposal of Trading Stock (Section 44(1))","Foreign Currency Debt Loss (Realised Exchange Loss) (Section 46(3))",
-        "Loss on Disposal of Asset (Section 48)","Exclusion of Doctrine Mutuality (Section 59(3))",
-        "Partnership Loss for Resident Partner (Section 66(3))","Partnership Loss for Non-Resident Partner (Section 66(4))",
-        "Expenditure or Loss by Trustee Beneficiary (Section 71(5))","Expenditure or Loss by Beneficiary of Deceased Estate (Section 72(2))",
-        "Limitation on Deduction for Petroleum Operations (Section 91(1))","Decommission Costs & Expenditures - Petroleum (Section 99(2))",
-        "Unrealised Gains (Section 46)","Impairment of Asset","Decrease in Provision for Bad Debts (Section 24)",
-        "Bad Debts Written Off (Section 24)","Staff Costs - Business Travel (Section 22)",
-        "Private Employer Disability Tax (Section 22(1)(e))","Rental Income Expenditure & Losses (Section 22(1)(c)(2))",
-        "Local Service Tax (Section 22(1)(d))","Interest Income on Treasury Bills (Section 139(a))",
-        "Interest on Circulating Capital","Interest Income on Treasury Bonds (Section 139(a))",
-        "Specific Provisions for Bad Debts (Financial Institutions)","Revaluation Gains (Financial Institutions)",
-        "Rental Income (Section 5(3)(a))","Interest Income from Treasury Bills (Section 139(a)(c)(d))",
-        "Interest Income from Treasury Bonds (Section 139(a)(c)(d))","Legal Expenses on Breach of Contract to Revenue Account",
-        "Legal Expenses on Maintenance of Capital Assets","Legal Expenses on Existing Trade Rights",
-        "Legal Expenses Incidental to Revenue Items","Legal Expenses on Debt Collection - Trade Debts",
-        "Closing Tax Written Down Value < UGX1M (Section 27(6))","Intangible Assets",
-        "Legal Expenses for Renewal of Loans (Financial Institutions)","Interest on Debt Obligation (Loan) (Section 25(1))",
-        "Interest on Debt Obligation by Group Member (30% EBITDA) (Section 25(3))","Gains & Losses on Disposal of Assets (Section 22(1)(b))",
-        "Balancing Allowance (Sections 27(7))"
+        "Wear & Tear", "Industrial Building Allowance", "Startup Costs",
+        "Reverse VAT", "Listing Business with Uganda Stock Exchange",
+        "Registration Fees, Accountant Fees, Legal Fees, Advertising, Training",
+        "Expenses in Acquiring Intangible Asset", "Disposal of Intangible Asset",
+        "Minor Capital Expenditure", "Revenue Expenditures - Repairs & Maintenance",
+        "Expenditure on Scientific Research", "Expenditure on Training (Education)",
+        "Charitable Donations to Exempt Organisations", "Charitable Donations Up to 5% Chargeable Income",
+        "Expenditure on Farming", "Apportionment of Deductions", "Carry Forward Losses from Previous Period",
+        "Carry Forward Losses Upto 50% after 7 Years", "Disposal of Trading Stock",
+        "Foreign Currency Debt Loss", "Loss on Disposal of Asset", "Exclusion of Doctrine Mutuality",
+        "Partnership Loss for Resident Partner", "Partnership Loss for Non-Resident Partner",
+        "Expenditure or Loss by Trustee Beneficiary", "Expenditure or Loss by Beneficiary of Deceased Estate",
+        "Limitation on Deduction for Petroleum Operations", "Decommission Costs & Expenditures - Petroleum",
+        "Unrealised Gains", "Impairment of Asset", "Decrease in Provision for Bad Debts",
+        "Bad Debts Written Off", "Staff Costs - Business Travel", "Private Employer Disability Tax",
+        "Rental Income Expenditure & Losses", "Local Service Tax", "Interest Income on Treasury Bills",
+        "Interest on Circulating Capital", "Interest Income on Treasury Bonds",
+        "Specific Provisions for Bad Debts", "Revaluation Gains", "Rental Income",
+        "Interest Income from Treasury Bills", "Interest Income from Treasury Bonds",
+        "Legal Expenses on Breach of Contract to Revenue Account", "Legal Expenses on Maintenance of Capital Assets",
+        "Legal Expenses on Existing Trade Rights", "Legal Expenses Incidental to Revenue Items",
+        "Legal Expenses on Debt Collection - Trade Debts", "Closing Tax Written Down Value < UGX1M",
+        "Intangible Assets", "Legal Expenses for Renewal of Loans", "Interest on Debt Obligation",
+        "Interest on Debt Obligation by Group Member", "Gains & Losses on Disposal of Assets",
+        "Balancing Allowance"
     ]
-
     with st.expander("Allowables (Deductions) — click to edit and save", expanded=False):
         with st.form("t3_form_allowables"):
             al_values = {}
             for label in allowables_labels:
                 key = f"t3_al_{re.sub(r'[^a-z0-9]+', '_', label.lower())}"
-                default_val = float(st.session_state["allowables_values"].get(key, 0.0))
+                default_val = float(st.session_state.get("allowables_values", {}).get(key, 0.0))
                 al_values[key] = st.number_input(label, min_value=0.0, value=default_val, format="%.2f", key=key + "_widget")
             allowables_submit = st.form_submit_button("Save Allowables", use_container_width=True)
             if allowables_submit:
+                if "allowables_values" not in st.session_state:
+                    st.session_state["allowables_values"] = {}
                 st.session_state["allowables_values"].update(al_values)
                 st.success("Allowables saved to session.")
 
-    total_allowables = sum(float(v) for v in st.session_state["allowables_values"].values())
+    total_allowables = sum(float(v) for v in st.session_state.get("allowables_values", {}).values())
     chargeable_income = max(0.0, adjusted_profit - total_allowables)
     st.markdown(f"### Chargeable Income (after allowables): UGX {chargeable_income:,.2f}")
 
@@ -876,16 +618,48 @@ with tab3:
         rebates = st.number_input("Rebates (UGX)", min_value=0.0, value=0.0, format="%.2f", key="t3_in_rebates")
         provisional_tax_paid = st.number_input("Provisional Tax Paid (UGX)", min_value=0.0, value=0.0, format="%.2f", key="t3_in_provisional")
 
+    # Tax computation functions
+    def compute_individual_tax_brackets(taxable_income: float, brackets: List[Dict]) -> float:
+        if taxable_income <= 0:
+            return 0.0
+        tax = 0.0
+        for i, b in enumerate(brackets):
+            threshold = b["threshold"]
+            rate = b["rate"]
+            fixed = b.get("fixed", 0.0)
+            next_threshold = brackets[i + 1]["threshold"] if i + 1 < len(brackets) else None
+            if taxable_income > threshold:
+                upper = taxable_income if next_threshold is None else min(taxable_income, next_threshold)
+                taxable_slice = max(0.0, upper - threshold)
+                tax = fixed + taxable_slice * rate
+            else:
+                break
+        return round(max(0.0, tax), 2)
+
+    def compute_company_tax(taxable_income: float, company_rate: float = 0.30) -> float:
+        if taxable_income <= 0:
+            return 0.0
+        return round(taxable_income * company_rate, 2)
+
+    def apply_credits_and_rebates(gross_tax: float, credits_wht: float, credits_foreign: float, rebates: float) -> float:
+        return max(0.0, gross_tax - credits_wht - credits_foreign - rebates)
+
+    individual_brackets = [
+        {"threshold": 0.0, "rate": 0.0, "fixed": 0.0},
+        {"threshold": 2_820_000.0, "rate": 0.1, "fixed": 0.0},
+        {"threshold": 4_020_000.0, "rate": 0.2, "fixed": 120_000.0},
+        {"threshold": 4_920_000.0, "rate": 0.3, "fixed": 360_000.0},
+        {"threshold": 10_000_000.0, "rate": 0.4, "fixed": 1_830_000.0}
+    ]
+
     if st.button("Compute Tax Liability", key="t3_btn_compute"):
         adjusted_taxable_income = max(0.0, chargeable_income - capital_allowances - exemptions)
         if taxpayer_type.lower() == "company":
             gross_tax = compute_company_tax(adjusted_taxable_income, company_rate=company_rate)
         else:
             gross_tax = compute_individual_tax_brackets(adjusted_taxable_income, individual_brackets)
-
         net_tax_payable = apply_credits_and_rebates(gross_tax, credits_wht, credits_foreign, rebates)
         net_tax_after_provisional = max(0.0, net_tax_payable - provisional_tax_paid)
-
         st.session_state["last_computation"] = {
             "client_name": client_name,
             "TIN": tin,
@@ -901,12 +675,20 @@ with tab3:
             "rebates": rebates, "provisional_tax_paid": provisional_tax_paid,
             "net_tax_payable": net_tax_after_provisional
         }
-
         st.success("Computation complete — see summary below.")
         st.metric("Taxable Income (after capital allowances & exemptions)", f"UGX {adjusted_taxable_income:,.2f}")
         st.metric("Gross Tax (before credits)", f"UGX {gross_tax:,.2f}")
         st.metric("Net Tax Payable (after credits & rebates)", f"UGX {net_tax_payable:,.2f}")
         st.metric("Net Tax Payable (after provisional payments)", f"UGX {net_tax_after_provisional:,.2f}")
+
+        def save_history(row):
+            conn = sqlite3.connect(HISTORY_DB)
+            c = conn.cursor()
+            keys = ','.join(row.keys())
+            qmarks = ','.join(['?']*len(row))
+            c.execute(f"INSERT INTO income_tax_history ({keys}) VALUES ({qmarks})", tuple(row.values()))
+            conn.commit()
+            conn.close()
 
         if st.button("💾 Save Computation to History (DB)", key="t3_btn_save_history"):
             row = {
@@ -925,83 +707,59 @@ with tab3:
                 "created_at": datetime.utcnow().isoformat()
             }
             save_history(row)
-            load_history_cached.clear()  # refresh cache
             st.success("Saved to history.")
 
-# ----------------------------
-# History DB configuration
-# ----------------------------
-HISTORY_DB = "/tmp/taxintellilytics/taxintellilytics_history.sqlite"
-
-# ----------------------------
-# Cached helper to load tax history
-# ----------------------------
-@st.cache_data(ttl=600)
-def load_history_cached(client_filter: str = "") -> pd.DataFrame:
-    """Load tax history from DB, optionally filter by client name"""
-    try:
-        with sqlite3.connect(HISTORY_DB) as conn:
-            df = pd.read_sql_query(
-                "SELECT * FROM income_tax_history ORDER BY year DESC, created_at DESC", conn
-            )
-        if client_filter and not df.empty:
-            df = df[df["client_name"].str.contains(client_filter, case=False, na=False)]
-        return df
-    except Exception as e:
-        st.error(f"Failed to load history: {e}")
-        return pd.DataFrame()
-
-# ----------------------------
+# ---------------------------
 # Tab 4: Dashboard
-# ----------------------------
+# ---------------------------
 with tab4:
     st.subheader("📊 Multi-Year History Dashboard")
+    def load_history_cached(client_filter: str = "") -> pd.DataFrame:
+        try:
+            with sqlite3.connect(HISTORY_DB) as conn:
+                df = pd.read_sql_query(
+                    "SELECT * FROM income_tax_history ORDER BY year DESC, created_at DESC", conn
+                )
+            if client_filter and not df.empty:
+                df = df[df["client_name"].str.contains(client_filter, case=False, na=False)]
+            return df
+        except Exception as e:
+            st.error(f"Failed to load history: {e}")
+            return pd.DataFrame()
+
     client_filter = st.text_input("Filter by client name (optional)", "", key="t4_client_filter")
-
-    # Load history
     hist = load_history_cached(client_filter)
-
     if hist.empty:
         st.info("No saved history yet.")
     else:
         st.write("Showing latest 200 records (use filter to narrow).")
         st.dataframe(hist.head(200), use_container_width=True)
-
-        # Net Tax by Year
         st.markdown("#### Net Tax by Year")
         pivot = hist.groupby(["year"])["net_tax_payable"].sum().reset_index()
         if not pivot.empty:
             st.line_chart(
                 pivot.rename(columns={"net_tax_payable": "Net Tax Payable"}).set_index("year")
             )
-
-        # Taxable Income vs Gross Tax (latest 30)
         st.markdown("#### Taxable Income vs Gross Tax (latest 30)")
         chart_df = hist.head(30).set_index("created_at")[["taxable_income", "gross_tax"]]
         st.bar_chart(chart_df)
 
-# ----------------------------
+# ---------------------------
 # Tab 5: Export & URA Forms
-# ----------------------------
+# ---------------------------
 with tab5:
     st.subheader("📤 URA Return CSV / Excel (DT-2001 / DT-2002) with Validation")
-
     last = st.session_state.get("last_computation", {})
     suggested_client = last.get("client_name", "")
     suggested_year = int(last.get("year", tax_year))
     suggested_period = last.get("period", period_label)
     suggested_taxable = float(last.get("taxable_income", 0.0))
     suggested_gross = float(last.get("gross_tax", 0.0))
-
     st.markdown("Fill the required fields to build a URA-compliant CSV/Excel.")
-
     form_code = "DT-2002" if taxpayer_type.lower() == "company" else "DT-2001"
     st.info(f"Selected Form: **{form_code}**")
-
     TIN_input = st.text_input("TIN (required)", value=last.get("TIN", ""), key="t5_tin_input")
-
     if form_code == "DT-2001":
-        # ---- Individuals ----
         taxpayer_name = st.text_input("Taxpayer Name", value=suggested_client, key="t5_taxpayer_name")
         business_income = st.number_input("Business Income (UGX)", min_value=0.0, value=suggested_taxable, format="%.2f", key="t5_biz_income")
         allowable_deductions = st.number_input("Allowable Deductions (UGX)", min_value=0.0, value=float(last.get("total_allowables", 0.0)), format="%.2f", key="t5_allowable_deductions")
@@ -1011,7 +769,6 @@ with tab5:
         wht_f = st.number_input("WHT Credits (UGX)", min_value=0.0, value=float(last.get("credits_wht", 0.0)), format="%.2f", key="t5_wht")
         foreign_f = st.number_input("Foreign Tax Credit (UGX)", min_value=0.0, value=float(last.get("credits_foreign", 0.0)), format="%.2f", key="t5_ftc")
         rebates_f = st.number_input("Rebates (UGX)", min_value=0.0, value=float(last.get("rebates", 0.0)), format="%.2f", key="t5_rebates")
-
         payload = {
             "TIN": TIN_input,
             "Taxpayer Name": taxpayer_name,
@@ -1028,9 +785,7 @@ with tab5:
             "Rebates (UGX)": rebates_f,
             "Net Tax Payable (UGX)": max(0.0, gross_tax_f - wht_f - foreign_f - rebates_f),
         }
-
     else:
-        # ---- Companies ----
         entity_name = st.text_input("Entity Name", value=suggested_client, key="t5_entity_name")
         gross_turnover = st.number_input("Gross Turnover (UGX)", min_value=0.0, value=float(last.get("revenue", 0.0)), format="%.2f", key="t5_gturnover")
         cogs_f = st.number_input("COGS (UGX)", min_value=0.0, value=float(last.get("cogs", 0.0)), format="%.2f", key="t5_cogs")
@@ -1043,9 +798,7 @@ with tab5:
         wht_f = st.number_input("WHT Credits (UGX)", min_value=0.0, value=float(last.get("credits_wht", 0.0)), format="%.2f", key="t5_wht_c")
         foreign_f = st.number_input("Foreign Tax Credit (UGX)", min_value=0.0, value=float(last.get("credits_foreign", 0.0)), format="%.2f", key="t5_ftc_c")
         rebates_f = st.number_input("Rebates (UGX)", min_value=0.0, value=float(last.get("rebates", 0.0)), format="%.2f", key="t5_rebates_c")
-
         taxable_income_calc = max(0.0, (gross_turnover + other_income_f) - (cogs_f + opex_f + other_expenses_f) - capital_allowances_f - exemptions_f)
-
         payload = {
             "TIN": TIN_input,
             "Entity Name": entity_name,
@@ -1065,12 +818,16 @@ with tab5:
             "Rebates (UGX)": rebates_f,
             "Net Tax Payable (UGX)": max(0.0, gross_tax_f - wht_f - foreign_f - rebates_f),
         }
-
+    def validate_and_build_return(form_code, payload):
+        for k, v in payload.items():
+            if v is None or (isinstance(v, str) and not v.strip()):
+                raise ValueError(f"Missing value for {k}")
+        df = pd.DataFrame([payload])
+        return df
     if st.button("✅ Validate & Build CSV / Excel", key="t5_btn_build"):
         try:
             df_return = validate_and_build_return(form_code, payload)
             st.success("Validation passed. Download your URA return below.")
-
             csv_bytes = df_return.to_csv(index=False).encode("utf-8")
             st.download_button(
                 label="📥 Download URA Return CSV",
@@ -1079,11 +836,9 @@ with tab5:
                 mime="text/csv",
                 key="t5_dl_csv"
             )
-
             buffer = io.BytesIO()
             with pd.ExcelWriter(buffer, engine="xlsxwriter") as writer:
                 df_return.to_excel(writer, index=False, sheet_name=form_code)
-
             st.download_button(
                 label="📥 Download URA Return Excel",
                 data=buffer.getvalue(),
@@ -1091,33 +846,25 @@ with tab5:
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                 key="t5_dl_xlsx"
             )
-
             st.dataframe(df_return, use_container_width=True)
-
         except Exception as e:
             st.error(f"Validation failed: {e}")
 
-# ----------------------------
+# ---------------------------
 # Tab 6: Audit & Controls
-# ----------------------------
+# ---------------------------
 with tab6:
     st.subheader("🔎 Audit & Control Accounts")
     st.markdown("""
         Upload a **Trial Balance** (TB). This tool will:
         1) Check TB integrity (Debits = Credits),
-        2) Match & test sign expectations for control accounts (editable map in sidebar),
-        3) Reconcile TB-derived P&L vs your mapped P&L values (materiality in sidebar).
+        2) Match & test sign expectations for control accounts,
+        3) Reconcile TB-derived P&L vs your mapped P&L values.
     """)
-
     tb_file = st.file_uploader("Upload Trial Balance (CSV/Excel)", type=["csv", "xlsx"], key="tb_upload")
-
-    # Materiality threshold input
     materiality = st.sidebar.number_input(
         "Materiality Threshold (UGX)", min_value=0.0, value=1000000.0, step=100000.0, key="materiality_threshold"
     )
-
-    # Control accounts map
-    st.sidebar.markdown("### 🔧 Control Accounts Map")
     control_accounts = {
         "Cash": "Debit",
         "Bank": "Debit",
@@ -1126,8 +873,6 @@ with tab6:
         "Revenue": "Credit",
         "Expenses": "Debit"
     }
-
-    # Editable map
     user_control_map = {}
     for i, (acc, expected_sign) in enumerate(control_accounts.items()):
         user_choice = st.sidebar.selectbox(
@@ -1136,27 +881,20 @@ with tab6:
             key=f"ctrl_{acc}_{i}"
         )
         user_control_map[acc] = user_choice
-
     if tb_file:
         try:
             if tb_file.name.endswith(".csv"):
                 tb_df = pd.read_csv(tb_file)
             else:
                 tb_df = pd.read_excel(tb_file)
-
             st.write("✅ Trial Balance Preview:")
             st.dataframe(tb_df.head())
-
-            # TB integrity check
             total_debits = tb_df["Debit"].sum() if "Debit" in tb_df.columns else 0
             total_credits = tb_df["Credit"].sum() if "Credit" in tb_df.columns else 0
-
             if np.isclose(total_debits, total_credits):
                 st.success(f"Trial Balance is balanced. Debits = {total_debits}, Credits = {total_credits}")
             else:
                 st.error(f"Trial Balance is NOT balanced! Debits = {total_debits}, Credits = {total_credits}")
-
-            # Control accounts check
             st.markdown("### Control Accounts Sign Check")
             for acc, expected_sign in user_control_map.items():
                 if acc in tb_df["Account"].values:
@@ -1168,283 +906,109 @@ with tab6:
                         st.warning(f"{acc}: Mismatch! Expected {expected_sign}, Found {sign}")
                 else:
                     st.info(f"{acc}: Account not in TB")
-
-            # P&L reconciliation
             st.markdown("### P&L Reconciliation")
             tb_pl_total = tb_df.loc[tb_df["Account"].isin(["Revenue", "Expenses"]), "Debit"].sum() - tb_df.loc[tb_df["Account"].isin(["Revenue", "Expenses"]), "Credit"].sum()
-
             if abs(tb_pl_total) <= materiality:
                 st.success(f"P&L within materiality ({tb_pl_total} UGX)")
             else:
                 st.warning(f"P&L outside materiality ({tb_pl_total} UGX)")
-
         except Exception as e:
             st.error(f"Error processing TB: {e}")
 
-# taxintell_streamlit_app.py
-# Streamlit app for capturing sales & purchases, computing presumptive tax, and filing VAT returns
+# ---------------------------
+# Tab 7: VAT
+# ---------------------------
+with tab7:
+    st.header("VAT Return")
+    st.subheader("Monthly VAT Computation & Return")
+    st.markdown("Enter your VAT sales and purchases for the period below:")
 
-import streamlit as st
-from sqlalchemy import create_engine, Column, String, Integer, Date, Numeric, Text, Boolean, ForeignKey, DateTime, func
-from sqlalchemy.orm import sessionmaker, declarative_base, relationship
-from sqlalchemy.exc import IntegrityError
-from datetime import datetime, date
-import pandas as pd
-import uuid
-import os
+    vat_sales = st.number_input("Total VATable Sales (UGX)", min_value=0.0, value=0.0, step=1000.0, format="%.2f", key="vat_sales")
+    vat_output = st.number_input("Output VAT Collected (UGX)", min_value=0.0, value=0.0, step=1000.0, format="%.2f", key="vat_output")
+    vat_purchases = st.number_input("Total VATable Purchases (UGX)", min_value=0.0, value=0.0, step=1000.0, format="%.2f", key="vat_purchases")
+    vat_input = st.number_input("Input VAT Paid (UGX)", min_value=0.0, value=0.0, step=1000.0, format="%.2f", key="vat_input")
+    vat_adjustments = st.number_input("Adjustments (UGX)", min_value=0.0, value=0.0, step=1000.0, format="%.2f", key="vat_adjustments")
 
-# ----------------------
-# Configuration
-# ----------------------
-DB_PATH = "sqlite:///taxintell.db"
-UPLOAD_DIR = "uploads"
-os.makedirs(UPLOAD_DIR, exist_ok=True)
+    net_vat_payable = max(0.0, vat_output - vat_input + vat_adjustments)
+    st.metric("Net VAT Payable", f"UGX {net_vat_payable:,.2f}")
 
-# ----------------------
-# Database setup
-# ----------------------
-Base = declarative_base()
+    if st.button("Download VAT Return CSV", key="vat_dl_btn"):
+        import pandas as pd
+        vat_df = pd.DataFrame([{
+            "VATable Sales": vat_sales,
+            "Output VAT": vat_output,
+            "VATable Purchases": vat_purchases,
+            "Input VAT": vat_input,
+            "Adjustments": vat_adjustments,
+            "Net VAT Payable": net_vat_payable
+        }])
+        st.download_button(
+            label="Download VAT Return CSV",
+            data=vat_df.to_csv(index=False).encode("utf-8"),
+            file_name="VAT_Return.csv",
+            mime="text/csv"
+        )
 
-class Merchant(Base):
-    __tablename__ = "merchants"
-    id = Column(String, primary_key=True)
-    business_name = Column(String)
-    tin = Column(String, nullable=True)
-    phone = Column(String, nullable=True)
-    address = Column(String, nullable=True)
-    created_at = Column(DateTime, default=datetime.utcnow)
-    transactions = relationship("Transaction", back_populates="merchant")
-    vat_entries = relationship("VATEntry", back_populates="merchant")
+# ---------------------------
+# Tab 8: Presumptive Tax
+# ---------------------------
+with tab8:
+    st.header("Presumptive Tax")
+    st.subheader("Presumptive Tax Calculator (for small businesses)")
+    st.markdown("Enter your annual gross turnover below:")
 
-# Presumptive tax transaction model
-class Transaction(Base):
-    __tablename__ = "transactions"
-    id = Column(String, primary_key=True)
-    merchant_id = Column(String, ForeignKey("merchants.id"))
-    type = Column(String)  # 'sale' or 'purchase'
-    date = Column(Date)
-    amount = Column(Numeric)
-    currency = Column(String, default="UGX")
-    counterparty = Column(String, nullable=True)
-    category = Column(String, nullable=True)
-    payment_method = Column(String, nullable=True)
-    receipt_path = Column(String, nullable=True)
-    notes = Column(Text, nullable=True)
-    created_at = Column(DateTime, default=datetime.utcnow)
-    merchant = relationship("Merchant", back_populates="transactions")
+    gross_turnover = st.number_input("Annual Gross Turnover (UGX)", min_value=0.0, value=0.0, step=1000.0, format="%.2f", key="presumptive_turnover")
+    has_book_of_accounts = st.checkbox("Do you keep books of accounts?", value=True, key="presumptive_books")
+    tax_due = 0.0
 
-class PresumptiveTaxRule(Base):
-    __tablename__ = "presumptive_tax_rules"
-    id = Column(Integer, primary_key=True)
-    name = Column(String)
-    active = Column(Boolean, default=True)
-    effective_from = Column(Date)
-    filing_period = Column(String)  # monthly|quarterly|annual
-    rate = Column(Numeric)
-    threshold = Column(Numeric, default=0)
-    min_tax = Column(Numeric, default=0)
-    max_tax = Column(Numeric, nullable=True)
-    purchase_deduction_pct = Column(Numeric, default=0)
-
-# VAT-specific model
-class VATEntry(Base):
-    __tablename__ = "vat_entries"
-    id = Column(String, primary_key=True)
-    merchant_id = Column(String, ForeignKey("merchants.id"))
-    kind = Column(String)  # sale|purchase
-    date = Column(Date)
-    description = Column(Text)
-    counterparty_name = Column(String, nullable=True)
-    counterparty_tin = Column(String, nullable=True)
-    supply_type = Column(String, default="standard")  # standard|zero|exempt|import_goods|import_service
-    gross_amount = Column(Numeric)
-    vat_rate = Column(Numeric, default=0.18)
-    vat_amount = Column(Numeric, default=0)
-    disallowed_type = Column(String, nullable=True)  # telephone|entertainment|club|other
-    created_at = Column(DateTime, default=datetime.utcnow)
-    merchant = relationship("Merchant", back_populates="vat_entries")
-
-# DB connection
-engine = create_engine(DB_PATH, connect_args={"check_same_thread": False})
-SessionLocal = sessionmaker(bind=engine)
-Base.metadata.create_all(bind=engine)
-
-# ----------------------
-# Helpers
-# ----------------------
-
-def get_session():
-    return SessionLocal()
-
-# Merchant helpers
-def add_merchant(name, tin=None, phone=None, address=None):
-    s = get_session()
-    m = Merchant(id=str(uuid.uuid4()), business_name=name, tin=tin, phone=phone, address=address)
-    s.add(m)
-    try:
-        s.commit()
-    except IntegrityError:
-        s.rollback()
-        return None
-    finally:
-        s.close()
-    return m
-
-def list_merchants():
-    s = get_session()
-    merchants = s.query(Merchant).order_by(Merchant.business_name).all()
-    s.close()
-    return merchants
-
-# Presumptive tax helpers
-def add_transaction(merchant_id, ttype, tdate, amount, **kwargs):
-    s = get_session()
-    tx = Transaction(
-        id=str(uuid.uuid4()), merchant_id=merchant_id, type=ttype, date=tdate, amount=amount,
-        counterparty=kwargs.get("counterparty"), category=kwargs.get("category"),
-        payment_method=kwargs.get("payment_method"), receipt_path=kwargs.get("receipt_path"), notes=kwargs.get("notes")
-    )
-    s.add(tx)
-    s.commit()
-    s.refresh(tx)
-    s.close()
-    return tx
-
-def query_transactions(merchant_id=None, start_date=None, end_date=None):
-    s = get_session()
-    q = s.query(Transaction)
-    if merchant_id:
-        q = q.filter(Transaction.merchant_id == merchant_id)
-    if start_date:
-        q = q.filter(Transaction.date >= start_date)
-    if end_date:
-        q = q.filter(Transaction.date <= end_date)
-    rows = q.order_by(Transaction.date.desc()).all()
-    s.close()
-    return rows
-
-# VAT helpers
-def add_vat_entry(merchant_id, kind, date_, gross_amount, vat_rate=0.18, **kwargs):
-    s = get_session()
-    vat_amount = float(gross_amount) * float(vat_rate)
-    entry = VATEntry(
-        id=str(uuid.uuid4()), merchant_id=merchant_id, kind=kind, date=date_,
-        description=kwargs.get("description"), counterparty_name=kwargs.get("counterparty_name"), counterparty_tin=kwargs.get("counterparty_tin"),
-        supply_type=kwargs.get("supply_type","standard"), gross_amount=gross_amount, vat_rate=vat_rate, vat_amount=vat_amount,
-        disallowed_type=kwargs.get("disallowed_type")
-    )
-    s.add(entry)
-    s.commit()
-    s.refresh(entry)
-    s.close()
-    return entry
-
-def query_vat_entries(merchant_id=None, start_date=None, end_date=None):
-    s = get_session()
-    q = s.query(VATEntry)
-    if merchant_id:
-        q = q.filter(VATEntry.merchant_id == merchant_id)
-    if start_date:
-        q = q.filter(VATEntry.date >= start_date)
-    if end_date:
-        q = q.filter(VATEntry.date <= end_date)
-    rows = q.order_by(VATEntry.date.desc()).all()
-    s.close()
-    return rows
-
-def compute_vat_summary(merchant_id, start_date, end_date):
-    rows = query_vat_entries(merchant_id, start_date, end_date)
-    sales = [r for r in rows if r.kind == "sale"]
-    purchases = [r for r in rows if r.kind == "purchase"]
-
-    output_tax = sum(float(r.vat_amount) for r in sales)
-    input_tax = sum(float(r.vat_amount) for r in purchases)
-    net_vat = output_tax - input_tax
-
-    return {
-        "sales_count": len(sales),
-        "purchases_count": len(purchases),
-        "output_tax": round(output_tax,2),
-        "input_tax": round(input_tax,2),
-        "net_vat": round(net_vat,2),
-    }
-
-# ----------------------
-# Streamlit UI
-# ----------------------
-
-st.set_page_config(page_title="TaxIntell", layout="wide")
-
-st.title("TaxIntell — Tax Filing Support")
-
-menu = st.sidebar.selectbox("Choose page", ["Dashboard", "Add Transaction", "Transactions", "Import CSV", "VAT Return", "Presumptive Tax", "Tax Rules (Admin)", "Merchants"])
-
-# Merchant selector
-merchants = list_merchants()
-merchant_map = {m.business_name + (f" ({m.tin})" if m.tin else ""): m.id for m in merchants}
-selected_merchant_name = st.sidebar.selectbox("Select Merchant", options=["-- create new --"] + list(merchant_map.keys()))
-selected_merchant_id = merchant_map[selected_merchant_name] if selected_merchant_name != "-- create new --" else None
-
-# VAT Return Section
-if menu == "VAT Return":
-    st.header("Monthly VAT Return")
-    if not selected_merchant_id:
-        st.warning("Select a merchant first.")
+    if gross_turnover <= 10_000_000:
+        tax_due = 0.0
+        st.info("No presumptive tax due (turnover ≤ UGX 10M).")
+    elif gross_turnover <= 30_000_000:
+        tax_due = 80_000.0
+    elif gross_turnover <= 50_000_000:
+        tax_due = 200_000.0
+    elif gross_turnover <= 80_000_000:
+        tax_due = 400_000.0
+    elif gross_turnover <= 150_000_000:
+        tax_due = 900_000.0
+    elif gross_turnover <= 350_000_000:
+        tax_due = 2_200_000.0
+    elif gross_turnover <= 500_000_000:
+        tax_due = 2_700_000.0
     else:
-        col1, col2 = st.columns(2)
-        with col1:
-            start = st.date_input("Start date", value=date.today().replace(day=1))
-        with col2:
-            end = st.date_input("End date", value=date.today())
+        st.warning("Turnover exceeds presumptive tax threshold (UGX 500M). Use normal income tax.")
 
-        with st.form("vat_form"):
-            kind = st.selectbox("Entry type", ["sale","purchase"])
-            dt = st.date_input("Date", value=date.today(), key="vat_date")
-            gross = st.number_input("Gross amount", min_value=0.0, format="%.2f")
-            vat_rate = st.number_input("VAT rate", min_value=0.0, max_value=1.0, value=0.18, format="%.2f")
-            desc = st.text_input("Description")
-            cp_name = st.text_input("Customer/Supplier name")
-            cp_tin = st.text_input("Customer/Supplier TIN")
-            supply_type = st.selectbox("Supply type", ["standard","zero","exempt","import_goods","import_service"])
-            disallowed = st.selectbox("Disallowed input (if purchase)", ["none","telephone","entertainment","club","other"])
-            submit_vat = st.form_submit_button("Add VAT Entry")
-            if submit_vat and selected_merchant_id:
-                add_vat_entry(selected_merchant_id, kind, dt, gross, vat_rate=vat_rate, description=desc, counterparty_name=cp_name, counterparty_tin=cp_tin, supply_type=supply_type, disallowed_type=(None if disallowed=="none" else disallowed))
-                st.success("VAT entry added")
+    if has_book_of_accounts and gross_turnover > 50_000_000 and gross_turnover <= 150_000_000:
+        tax_due = gross_turnover * 0.015
 
-        if st.button("Generate VAT Summary"):
-            result = compute_vat_summary(selected_merchant_id, start, end)
-            st.subheader("VAT Computation Summary")
-            st.metric("Output VAT", f"{result['output_tax']:.2f}")
-            st.metric("Input VAT", f"{result['input_tax']:.2f}")
-            if result['net_vat'] >= 0:
-                st.success(f"VAT Payable: {result['net_vat']}")
-            else:
-                st.info(f"VAT Claimable (Refund): {-result['net_vat']}")
+    st.metric("Presumptive Tax Due", f"UGX {tax_due:,.2f}")
 
-            # Export VAT return as CSV
-            vat_data = pd.DataFrame([result])
-            csv = vat_data.to_csv(index=False).encode('utf-8')
-            st.download_button("Download VAT Return CSV", data=csv, file_name=f"vat_return_{datetime.utcnow().strftime('%Y%m%d%H%M')}.csv")
+    if st.button("Download Presumptive Tax CSV", key="presumptive_dl_btn"):
+        import pandas as pd
+        presumptive_df = pd.DataFrame([{
+            "Gross Turnover": gross_turnover,
+            "Keeps Books of Accounts": has_book_of_accounts,
+            "Presumptive Tax Due": tax_due
+        }])
+        st.download_button(
+            label="Download Presumptive Tax CSV",
+            data=presumptive_df.to_csv(index=False).encode("utf-8"),
+            file_name="Presumptive_Tax.csv",
+            mime="text/csv"
+        )
 
-# (Other menus remain unchanged — Add Transaction, Transactions, Import CSV, Presumptive Tax, Tax Rules, Merchants)
-
-st.sidebar.markdown("---")
-st.sidebar.write("Features: Separate handling of Presumptive Tax and VAT")
-
-# ---------------- Tab 9: Payroll ----------------
+# ---------------------------
+# Tab 9: Payroll
+# ---------------------------
 with tab9:
     import pandas as pd
     from io import BytesIO
-
     st.header("Payroll for the Month of XXXX")
-
     num_employees = st.number_input("Number of Employees", min_value=1, value=3)
-
     columns = ["Name", "TIN Number", "Basic Salary", "Allowances", "Bonus", "Gross Pay",
                "LST Chargeable Income", "PAYE", "NSSF 5%", "LST", "Total Deduction", "Net Pay", "Take Home Pay"]
     payroll_df = pd.DataFrame(columns=columns)
-
     def calculate_lst_chargeable(gross_pay):
         if gross_pay > 10000000:
             return 25000 + 0.3 * (gross_pay - 410000) + 0.1 * (gross_pay - 10000000)
@@ -1456,16 +1020,12 @@ with tab9:
             return 0.1 * (gross_pay - 235000)
         else:
             return 0
-
     def calculate_paye(lst_chargeable):
         return lst_chargeable
-
     def calculate_nssf(basic_salary):
         return 0.05 * basic_salary
-
     def calculate_total_deductions(paye, nssf, lst):
         return paye + nssf + lst
-
     for i in range(num_employees):
         st.subheader(f"Employee {i+1}")
         name = st.text_input(f"Name {i+1}", key=f"name_{i}")
@@ -1473,7 +1033,6 @@ with tab9:
         basic_salary = st.number_input(f"Basic Salary {i+1}", min_value=0, key=f"basic_{i}")
         allowances = st.number_input(f"Allowances {i+1}", min_value=0, key=f"allow_{i}")
         bonus = st.number_input(f"Bonus {i+1}", min_value=0, key=f"bonus_{i}")
-
         gross_pay = basic_salary + allowances + bonus
         lst_chargeable = calculate_lst_chargeable(gross_pay)
         paye = calculate_paye(lst_chargeable)
@@ -1482,7 +1041,6 @@ with tab9:
         total_deduction = calculate_total_deductions(paye, nssf, lst)
         net_pay = gross_pay - total_deduction
         take_home = net_pay
-
         payroll_df = pd.concat([payroll_df, pd.DataFrame([{
             "Name": name,
             "TIN Number": tin,
@@ -1498,7 +1056,6 @@ with tab9:
             "Net Pay": net_pay,
             "Take Home Pay": take_home
         }])], ignore_index=True)
-
     st.subheader("Payroll Summary")
     st.dataframe(payroll_df.style.format({
         "Basic Salary": "{:,.2f}",
@@ -1513,7 +1070,6 @@ with tab9:
         "Net Pay": "{:,.2f}",
         "Take Home Pay": "{:,.2f}"
     }))
-
     def to_excel(df):
         output = BytesIO()
         with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
@@ -1528,9 +1084,7 @@ with tab9:
                     worksheet.set_column(col_num, col_num, 20)
         processed_data = output.getvalue()
         return processed_data
-
     excel_data = to_excel(payroll_df)
-
     st.download_button(
         label="Download Payroll as Excel",
         data=excel_data,
@@ -1538,21 +1092,19 @@ with tab9:
         mime="application/vnd.ms-excel"
     )
 
-# ---------------- Tab 10: Withholding Tax (WHT) ----------------
+# ---------------------------
+# Tab 10: Withholding Tax (WHT)
+# ---------------------------
 with tab10:
     import pandas as pd
     from io import BytesIO
-
     st.header("Withholding Tax (WHT) - XYZ Co Ltd")
     st.header("EAST Trainers TIN: 10000xxxx")
     period = st.text_input("Period", value="MAY 2025")
-
     st.subheader("International Payments")
     intl_columns = ["Inv. Date", "Invoice No.", "Country", "TIN", "Supplier", "Description",
                     "Currency", "Amount excl. WHT", "WHT Rate (%)", "WHT Amount", "URA Rate", "Amount Ushs", "WHT Ushs"]
-
     intl_df = pd.DataFrame(columns=intl_columns)
-
     num_intl = st.number_input("Number of International Payments", min_value=1, value=6)
     for i in range(num_intl):
         st.markdown(f"**International Payment {i+1}**")
@@ -1566,11 +1118,9 @@ with tab10:
         amount = st.number_input(f"Amount excl. WHT {i+1}", min_value=0.0, key=f"intl_amount_{i}")
         wht_rate = st.number_input(f"WHT Rate % {i+1}", min_value=0.0, value=15.0, key=f"intl_wht_rate_{i}")
         ura_rate = st.number_input(f"URA Rate {i+1}", value=3651 if currency=="USD" else 4142, key=f"intl_ura_rate_{i}")
-
         wht_amount = amount * (wht_rate / 100)
         amount_ushs = amount * ura_rate
         wht_ushs = wht_amount * ura_rate
-
         intl_df = pd.concat([intl_df, pd.DataFrame([{
             "Inv. Date": inv_date,
             "Invoice No.": invoice_no,
@@ -1586,19 +1136,16 @@ with tab10:
             "Amount Ushs": amount_ushs,
             "WHT Ushs": wht_ushs
         }])], ignore_index=True)
-
     st.dataframe(intl_df.style.format({
         "Amount excl. WHT": "{:,.2f}",
         "WHT Amount": "{:,.2f}",
         "Amount Ushs": "{:,.2f}",
         "WHT Ushs": "{:,.2f}"
     }))
-
     st.subheader("Local Payments")
     local_columns = ["Inv. Date", "Invoice No.", "TIN", "Supplier", "Description",
                      "Currency", "Amount excl. WHT", "WHT Rate (%)", "WHT Amount", "URA Rate", "Amount Ushs", "WHT Ushs"]
     local_df = pd.DataFrame(columns=local_columns)
-
     num_local = st.number_input("Number of Local Payments", min_value=1, value=4)
     for i in range(num_local):
         st.markdown(f"**Local Payment {i+1}**")
@@ -1611,11 +1158,9 @@ with tab10:
         amount = st.number_input(f"Amount excl. WHT {i+1}", min_value=0.0, key=f"loc_amount_{i}")
         wht_rate = st.number_input(f"WHT Rate % {i+1}", min_value=0.0, value=6.0, key=f"loc_wht_rate_{i}")
         ura_rate = st.number_input(f"URA Rate {i+1}", value=1 if currency=="UGX" else 3651, key=f"loc_ura_rate_{i}")
-
         wht_amount = amount * (wht_rate / 100)
         amount_ushs = amount * ura_rate
         wht_ushs = wht_amount * ura_rate
-
         local_df = pd.concat([local_df, pd.DataFrame([{
             "Inv. Date": inv_date,
             "Invoice No.": invoice_no,
@@ -1630,17 +1175,14 @@ with tab10:
             "Amount Ushs": amount_ushs,
             "WHT Ushs": wht_ushs
         }])], ignore_index=True)
-
     st.dataframe(local_df.style.format({
         "Amount excl. WHT": "{:,.2f}",
         "WHT Amount": "{:,.2f}",
         "Amount Ushs": "{:,.2f}",
         "WHT Ushs": "{:,.2f}"
     }))
-
     total_wht_payable = intl_df["WHT Ushs"].sum() + local_df["WHT Ushs"].sum()
     st.subheader(f"TOTAL WHT PAYABLE: {total_wht_payable:,.0f} UGX")
-
     def wht_to_excel(intl_df, local_df):
         output = BytesIO()
         with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
@@ -1657,7 +1199,6 @@ with tab10:
                     else:
                         worksheet.set_column(col_num, col_num, 20)
         return output.getvalue()
-
     excel_data = wht_to_excel(intl_df, local_df)
     st.download_button(
         label="Download WHT as Excel",
@@ -1666,34 +1207,18 @@ with tab10:
         mime="application/vnd.ms-excel"
     )
 
-# ---------------- Tab 11: Transfer Pricing ----------------
+# ---------------------------
+# Tab 11: Transfer Pricing
+# ---------------------------
 with tab11:
-    import pandas as pd
-    import numpy as np
-    from io import BytesIO
-    from datetime import datetime
+    st.header("Transfer Pricing")
+    st.info("Transfer Pricing module coming soon. Please use the Transfer Pricing tab in the main app for full functionality.")
 
-    # ...Paste all your Transfer Pricing code here...
-    # At the end, call:
-    render_transfer_pricing_tab()
-
-# ----------------------------
-# Footer / App Info
-# ----------------------------
+# ---------------------------
+# Footer
+# ---------------------------
 st.markdown("---")
 st.markdown(
-    """
-    <div style='text-align: center; font-size:12px; color:gray;'>
-        TaxIntellilytics &copy; 2025 | Developed by Walter Hillary Kaijamahe
-    </div>
-    """,
+    "<div style='text-align: center; font-size:12px; color:gray;'>TaxIntellilytics &copy; 2025 | Developed by Walter Hillary Kaijamahe</div>",
     unsafe_allow_html=True
 )
-
-# ----------------------------
-# Authentication Logout
-# ----------------------------
-if st.session_state.get("authenticated"):
-    if st.sidebar.button("Logout"):
-        st.session_state["authenticated"] = False
-        st.experimental_rerun()
