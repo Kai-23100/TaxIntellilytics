@@ -596,17 +596,17 @@ with tab5:
     st.markdown("Fill the required fields to build a URA-compliant CSV/Excel.")
     form_code = "DT-2002" if taxpayer_type.lower() == "company" else "DT-2001"
     st.info(f"Selected Form: **{form_code}**")
-    TIN_input = st.text_input("TIN (required)", value=last.get("TIN", ""), key="ura_tin_input")
+    TIN_input = st.text_input("TIN (required)", value=last.get("TIN", ""), key="tab5_tin_input")
     if form_code == "DT-2001":
-        taxpayer_name = st.text_input("Taxpayer Name", value=suggested_client, key="ura_taxpayer_name")
-        business_income = st.number_input("Business Income (UGX)", min_value=0.0, value=suggested_taxable, format="%.2f", key="ura_biz_income")
-        allowable_deductions = st.number_input("Allowable Deductions (UGX)", min_value=0.0, value=float(last.get("total_allowables", 0.0)), format="%.2f", key="ura_allowable_deductions")
-        capital_allowances_f = st.number_input("Capital Allowances (UGX)", min_value=0.0, value=float(last.get("capital_allowances", 0.0)), format="%.2f", key="ura_cap_allowances")
-        exemptions_f = st.number_input("Exemptions (UGX)", min_value=0.0, value=float(last.get("exemptions", 0.0)), format="%.2f", key="ura_exemptions")
-        gross_tax_f = st.number_input("Gross Tax (UGX)", min_value=0.0, value=suggested_gross, format="%.2f", key="ura_gross_tax")
-        wht_f = st.number_input("WHT Credits (UGX)", min_value=0.0, value=float(last.get("credits_wht", 0.0)), format="%.2f", key="ura_wht")
-        foreign_f = st.number_input("Foreign Tax Credit (UGX)", min_value=0.0, value=float(last.get("credits_foreign", 0.0)), format="%.2f", key="ura_ftc")
-        rebates_f = st.number_input("Rebates (UGX)", min_value=0.0, value=float(last.get("rebates", 0.0)), format="%.2f", key="ura_rebates")
+        taxpayer_name = st.text_input("Taxpayer Name", value=suggested_client, key="tab5_taxpayer_name")
+        business_income = st.number_input("Business Income (UGX)", min_value=0.0, value=suggested_taxable, format="%.2f", key="tab5_biz_income")
+        allowable_deductions = st.number_input("Allowable Deductions (UGX)", min_value=0.0, value=float(last.get("total_allowables", 0.0)), format="%.2f", key="tab5_allowable_deductions")
+        capital_allowances_f = st.number_input("Capital Allowances (UGX)", min_value=0.0, value=float(last.get("capital_allowances", 0.0)), format="%.2f", key="tab5_cap_allowances")
+        exemptions_f = st.number_input("Exemptions (UGX)", min_value=0.0, value=float(last.get("exemptions", 0.0)), format="%.2f", key="tab5_exemptions")
+        gross_tax_f = st.number_input("Gross Tax (UGX)", min_value=0.0, value=suggested_gross, format="%.2f", key="tab5_gross_tax")
+        wht_f = st.number_input("WHT Credits (UGX)", min_value=0.0, value=float(last.get("credits_wht", 0.0)), format="%.2f", key="tab5_wht")
+        foreign_f = st.number_input("Foreign Tax Credit (UGX)", min_value=0.0, value=float(last.get("credits_foreign", 0.0)), format="%.2f", key="tab5_ftc")
+        rebates_f = st.number_input("Rebates (UGX)", min_value=0.0, value=float(last.get("rebates", 0.0)), format="%.2f", key="tab5_rebates")
         payload = {
             "TIN": TIN_input,
             "Taxpayer Name": taxpayer_name,
@@ -624,18 +624,18 @@ with tab5:
             "Net Tax Payable (UGX)": max(0.0, gross_tax_f - wht_f - foreign_f - rebates_f),
         }
     else:
-        entity_name = st.text_input("Entity Name", value=suggested_client, key="ura_entity_name")
-        gross_turnover = st.number_input("Gross Turnover (UGX)", min_value=0.0, value=float(last.get("revenue", 0.0)), format="%.2f", key="ura_gturnover")
-        cogs_f = st.number_input("COGS (UGX)", min_value=0.0, value=float(last.get("cogs", 0.0)), format="%.2f", key="ura_cogs")
-        opex_f = st.number_input("Operating Expenses (UGX)", min_value=0.0, value=float(last.get("opex", 0.0)), format="%.2f", key="ura_opex")
-        other_income_f = st.number_input("Other Income (UGX)", min_value=0.0, value=float(last.get("other_income", 0.0)), format="%.2f", key="ura_oincome")
-        other_expenses_f = st.number_input("Other Expenses (UGX)", min_value=0.0, value=float(last.get("other_expenses", 0.0)), format="%.2f", key="ura_oexpense")
-        capital_allowances_f = st.number_input("Capital Allowances (UGX)", min_value=0.0, value=float(last.get("capital_allowances", 0.0)), format="%.2f", key="ura_cap_allowances_c")
-        exemptions_f = st.number_input("Exemptions (UGX)", min_value=0.0, value=float(last.get("exemptions", 0.0)), format="%.2f", key="ura_exemptions_c")
-        gross_tax_f = st.number_input("Gross Tax (UGX)", min_value=0.0, value=suggested_gross, format="%.2f", key="ura_gross_tax_c")
-        wht_f = st.number_input("WHT Credits (UGX)", min_value=0.0, value=float(last.get("credits_wht", 0.0)), format="%.2f", key="ura_wht_c")
-        foreign_f = st.number_input("Foreign Tax Credit (UGX)", min_value=0.0, value=float(last.get("credits_foreign", 0.0)), format="%.2f", key="ura_ftc_c")
-        rebates_f = st.number_input("Rebates (UGX)", min_value=0.0, value=float(last.get("rebates", 0.0)), format="%.2f", key="ura_rebates_c")
+        entity_name = st.text_input("Entity Name", value=suggested_client, key="tab5_entity_name")
+        gross_turnover = st.number_input("Gross Turnover (UGX)", min_value=0.0, value=float(last.get("revenue", 0.0)), format="%.2f", key="tab5_gturnover")
+        cogs_f = st.number_input("COGS (UGX)", min_value=0.0, value=float(last.get("cogs", 0.0)), format="%.2f", key="tab5_cogs")
+        opex_f = st.number_input("Operating Expenses (UGX)", min_value=0.0, value=float(last.get("opex", 0.0)), format="%.2f", key="tab5_opex")
+        other_income_f = st.number_input("Other Income (UGX)", min_value=0.0, value=float(last.get("other_income", 0.0)), format="%.2f", key="tab5_oincome")
+        other_expenses_f = st.number_input("Other Expenses (UGX)", min_value=0.0, value=float(last.get("other_expenses", 0.0)), format="%.2f", key="tab5_oexpense")
+        capital_allowances_f = st.number_input("Capital Allowances (UGX)", min_value=0.0, value=float(last.get("capital_allowances", 0.0)), format="%.2f", key="tab5_cap_allowances_c")
+        exemptions_f = st.number_input("Exemptions (UGX)", min_value=0.0, value=float(last.get("exemptions", 0.0)), format="%.2f", key="tab5_exemptions_c")
+        gross_tax_f = st.number_input("Gross Tax (UGX)", min_value=0.0, value=suggested_gross, format="%.2f", key="tab5_gross_tax_c")
+        wht_f = st.number_input("WHT Credits (UGX)", min_value=0.0, value=float(last.get("credits_wht", 0.0)), format="%.2f", key="tab5_wht_c")
+        foreign_f = st.number_input("Foreign Tax Credit (UGX)", min_value=0.0, value=float(last.get("credits_foreign", 0.0)), format="%.2f", key="tab5_ftc_c")
+        rebates_f = st.number_input("Rebates (UGX)", min_value=0.0, value=float(last.get("rebates", 0.0)), format="%.2f", key="tab5_rebates_c")
         taxable_income_calc = max(0.0, (gross_turnover + other_income_f) - (cogs_f + opex_f + other_expenses_f) - capital_allowances_f - exemptions_f)
         payload = {
             "TIN": TIN_input,
@@ -662,7 +662,7 @@ with tab5:
                 raise ValueError(f"Missing value for {k}")
         df = pd.DataFrame([payload])
         return df
-    if st.button("✅ Validate & Build CSV / Excel", key="ura_btn_build"):
+    if st.button("✅ Validate & Build CSV / Excel", key="tab5_btn_build"):
         try:
             df_return = validate_and_build_return(form_code, payload)
             st.success("Validation passed. Download your URA return below.")
@@ -672,7 +672,7 @@ with tab5:
                 data=csv_bytes,
                 file_name=f"{form_code}_{payload.get('Year')}_{payload.get('TIN','')}.csv",
                 mime="text/csv",
-                key="ura_dl_csv"
+                key="tab5_dl_csv"
             )
             buffer = io.BytesIO()
             with pd.ExcelWriter(buffer, engine="xlsxwriter") as writer:
@@ -682,7 +682,7 @@ with tab5:
                 data=buffer.getvalue(),
                 file_name=f"{form_code}_{payload.get('Year')}_{payload.get('TIN','')}.xlsx",
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                key="ura_dl_xlsx"
+                key="tab5_dl_xlsx"
             )
             st.dataframe(df_return, use_container_width=True)
         except Exception as e:
