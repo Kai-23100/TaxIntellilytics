@@ -1181,6 +1181,502 @@ with tab6:
         except Exception as e:
             st.error(f"Error processing TB: {e}")
 
+# taxintell_streamlit_app.py
+# Streamlit app for capturing sales & purchases, computing presumptive tax, and filing VAT returns
+
+import streamlit as st
+from sqlalchemy import create_engine, Column, String, Integer, Date, Numeric, Text, Boolean, ForeignKey, DateTime, func
+from sqlalchemy.orm import sessionmaker, declarative_base, relationship
+from sqlalchemy.exc import IntegrityError
+from datetime import datetime, date
+import pandas as pd
+import uuid
+import os
+
+# ----------------------
+# Configuration
+# ----------------------
+DB_PATH = "sqlite:///taxintell.db"
+UPLOAD_DIR = "uploads"
+os.makedirs(UPLOAD_DIR, exist_ok=True)
+
+# ----------------------
+# Database setup
+# ----------------------
+Base = declarative_base()
+
+class Merchant(Base):
+    __tablename__ = "merchants"
+    id = Column(String, primary_key=True)
+    business_name = Column(String)
+    tin = Column(String, nullable=True)
+    phone = Column(String, nullable=True)
+    address = Column(String, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    transactions = relationship("Transaction", back_populates="merchant")
+    vat_entries = relationship("VATEntry", back_populates="merchant")
+
+# Presumptive tax transaction model
+class Transaction(Base):
+    __tablename__ = "transactions"
+    id = Column(String, primary_key=True)
+    merchant_id = Column(String, ForeignKey("merchants.id"))
+    type = Column(String)  # 'sale' or 'purchase'
+    date = Column(Date)
+    amount = Column(Numeric)
+    currency = Column(String, default="UGX")
+    counterparty = Column(String, nullable=True)
+    category = Column(String, nullable=True)
+    payment_method = Column(String, nullable=True)
+    receipt_path = Column(String, nullable=True)
+    notes = Column(Text, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    merchant = relationship("Merchant", back_populates="transactions")
+
+class PresumptiveTaxRule(Base):
+    __tablename__ = "presumptive_tax_rules"
+    id = Column(Integer, primary_key=True)
+    name = Column(String)
+    active = Column(Boolean, default=True)
+    effective_from = Column(Date)
+    filing_period = Column(String)  # monthly|quarterly|annual
+    rate = Column(Numeric)
+    threshold = Column(Numeric, default=0)
+    min_tax = Column(Numeric, default=0)
+    max_tax = Column(Numeric, nullable=True)
+    purchase_deduction_pct = Column(Numeric, default=0)
+
+# VAT-specific model
+class VATEntry(Base):
+    __tablename__ = "vat_entries"
+    id = Column(String, primary_key=True)
+    merchant_id = Column(String, ForeignKey("merchants.id"))
+    kind = Column(String)  # sale|purchase
+    date = Column(Date)
+    description = Column(Text)
+    counterparty_name = Column(String, nullable=True)
+    counterparty_tin = Column(String, nullable=True)
+    supply_type = Column(String, default="standard")  # standard|zero|exempt|import_goods|import_service
+    gross_amount = Column(Numeric)
+    vat_rate = Column(Numeric, default=0.18)
+    vat_amount = Column(Numeric, default=0)
+    disallowed_type = Column(String, nullable=True)  # telephone|entertainment|club|other
+    created_at = Column(DateTime, default=datetime.utcnow)
+    merchant = relationship("Merchant", back_populates="vat_entries")
+
+# DB connection
+engine = create_engine(DB_PATH, connect_args={"check_same_thread": False})
+SessionLocal = sessionmaker(bind=engine)
+Base.metadata.create_all(bind=engine)
+
+# ----------------------
+# Helpers
+# ----------------------
+
+def get_session():
+    return SessionLocal()
+
+# Merchant helpers
+def add_merchant(name, tin=None, phone=None, address=None):
+    s = get_session()
+    m = Merchant(id=str(uuid.uuid4()), business_name=name, tin=tin, phone=phone, address=address)
+    s.add(m)
+    try:
+        s.commit()
+    except IntegrityError:
+        s.rollback()
+        return None
+    finally:
+        s.close()
+    return m
+
+def list_merchants():
+    s = get_session()
+    merchants = s.query(Merchant).order_by(Merchant.business_name).all()
+    s.close()
+    return merchants
+
+# Presumptive tax helpers
+def add_transaction(merchant_id, ttype, tdate, amount, **kwargs):
+    s = get_session()
+    tx = Transaction(
+        id=str(uuid.uuid4()), merchant_id=merchant_id, type=ttype, date=tdate, amount=amount,
+        counterparty=kwargs.get("counterparty"), category=kwargs.get("category"),
+        payment_method=kwargs.get("payment_method"), receipt_path=kwargs.get("receipt_path"), notes=kwargs.get("notes")
+    )
+    s.add(tx)
+    s.commit()
+    s.refresh(tx)
+    s.close()
+    return tx
+
+def query_transactions(merchant_id=None, start_date=None, end_date=None):
+    s = get_session()
+    q = s.query(Transaction)
+    if merchant_id:
+        q = q.filter(Transaction.merchant_id == merchant_id)
+    if start_date:
+        q = q.filter(Transaction.date >= start_date)
+    if end_date:
+        q = q.filter(Transaction.date <= end_date)
+    rows = q.order_by(Transaction.date.desc()).all()
+    s.close()
+    return rows
+
+# VAT helpers
+def add_vat_entry(merchant_id, kind, date_, gross_amount, vat_rate=0.18, **kwargs):
+    s = get_session()
+    vat_amount = float(gross_amount) * float(vat_rate)
+    entry = VATEntry(
+        id=str(uuid.uuid4()), merchant_id=merchant_id, kind=kind, date=date_,
+        description=kwargs.get("description"), counterparty_name=kwargs.get("counterparty_name"), counterparty_tin=kwargs.get("counterparty_tin"),
+        supply_type=kwargs.get("supply_type","standard"), gross_amount=gross_amount, vat_rate=vat_rate, vat_amount=vat_amount,
+        disallowed_type=kwargs.get("disallowed_type")
+    )
+    s.add(entry)
+    s.commit()
+    s.refresh(entry)
+    s.close()
+    return entry
+
+def query_vat_entries(merchant_id=None, start_date=None, end_date=None):
+    s = get_session()
+    q = s.query(VATEntry)
+    if merchant_id:
+        q = q.filter(VATEntry.merchant_id == merchant_id)
+    if start_date:
+        q = q.filter(VATEntry.date >= start_date)
+    if end_date:
+        q = q.filter(VATEntry.date <= end_date)
+    rows = q.order_by(VATEntry.date.desc()).all()
+    s.close()
+    return rows
+
+def compute_vat_summary(merchant_id, start_date, end_date):
+    rows = query_vat_entries(merchant_id, start_date, end_date)
+    sales = [r for r in rows if r.kind == "sale"]
+    purchases = [r for r in rows if r.kind == "purchase"]
+
+    output_tax = sum(float(r.vat_amount) for r in sales)
+    input_tax = sum(float(r.vat_amount) for r in purchases)
+    net_vat = output_tax - input_tax
+
+    return {
+        "sales_count": len(sales),
+        "purchases_count": len(purchases),
+        "output_tax": round(output_tax,2),
+        "input_tax": round(input_tax,2),
+        "net_vat": round(net_vat,2),
+    }
+
+# ----------------------
+# Streamlit UI
+# ----------------------
+
+st.set_page_config(page_title="TaxIntell", layout="wide")
+
+st.title("TaxIntell — Tax Filing Support")
+
+menu = st.sidebar.selectbox("Choose page", ["Dashboard", "Add Transaction", "Transactions", "Import CSV", "VAT Return", "Presumptive Tax", "Tax Rules (Admin)", "Merchants"])
+
+# Merchant selector
+merchants = list_merchants()
+merchant_map = {m.business_name + (f" ({m.tin})" if m.tin else ""): m.id for m in merchants}
+selected_merchant_name = st.sidebar.selectbox("Select Merchant", options=["-- create new --"] + list(merchant_map.keys()))
+selected_merchant_id = merchant_map[selected_merchant_name] if selected_merchant_name != "-- create new --" else None
+
+# VAT Return Section
+if menu == "VAT Return":
+    st.header("Monthly VAT Return")
+    if not selected_merchant_id:
+        st.warning("Select a merchant first.")
+    else:
+        col1, col2 = st.columns(2)
+        with col1:
+            start = st.date_input("Start date", value=date.today().replace(day=1))
+        with col2:
+            end = st.date_input("End date", value=date.today())
+
+        with st.form("vat_form"):
+            kind = st.selectbox("Entry type", ["sale","purchase"])
+            dt = st.date_input("Date", value=date.today(), key="vat_date")
+            gross = st.number_input("Gross amount", min_value=0.0, format="%.2f")
+            vat_rate = st.number_input("VAT rate", min_value=0.0, max_value=1.0, value=0.18, format="%.2f")
+            desc = st.text_input("Description")
+            cp_name = st.text_input("Customer/Supplier name")
+            cp_tin = st.text_input("Customer/Supplier TIN")
+            supply_type = st.selectbox("Supply type", ["standard","zero","exempt","import_goods","import_service"])
+            disallowed = st.selectbox("Disallowed input (if purchase)", ["none","telephone","entertainment","club","other"])
+            submit_vat = st.form_submit_button("Add VAT Entry")
+            if submit_vat and selected_merchant_id:
+                add_vat_entry(selected_merchant_id, kind, dt, gross, vat_rate=vat_rate, description=desc, counterparty_name=cp_name, counterparty_tin=cp_tin, supply_type=supply_type, disallowed_type=(None if disallowed=="none" else disallowed))
+                st.success("VAT entry added")
+
+        if st.button("Generate VAT Summary"):
+            result = compute_vat_summary(selected_merchant_id, start, end)
+            st.subheader("VAT Computation Summary")
+            st.metric("Output VAT", f"{result['output_tax']:.2f}")
+            st.metric("Input VAT", f"{result['input_tax']:.2f}")
+            if result['net_vat'] >= 0:
+                st.success(f"VAT Payable: {result['net_vat']}")
+            else:
+                st.info(f"VAT Claimable (Refund): {-result['net_vat']}")
+
+            # Export VAT return as CSV
+            vat_data = pd.DataFrame([result])
+            csv = vat_data.to_csv(index=False).encode('utf-8')
+            st.download_button("Download VAT Return CSV", data=csv, file_name=f"vat_return_{datetime.utcnow().strftime('%Y%m%d%H%M')}.csv")
+
+# (Other menus remain unchanged — Add Transaction, Transactions, Import CSV, Presumptive Tax, Tax Rules, Merchants)
+
+st.sidebar.markdown("---")
+st.sidebar.write("Features: Separate handling of Presumptive Tax and VAT")
+
+# ---------------- Tab 9: Payroll ----------------
+with tab9:
+    import pandas as pd
+    from io import BytesIO
+
+    st.header("Payroll for the Month of XXXX")
+
+    num_employees = st.number_input("Number of Employees", min_value=1, value=3)
+
+    columns = ["Name", "TIN Number", "Basic Salary", "Allowances", "Bonus", "Gross Pay",
+               "LST Chargeable Income", "PAYE", "NSSF 5%", "LST", "Total Deduction", "Net Pay", "Take Home Pay"]
+    payroll_df = pd.DataFrame(columns=columns)
+
+    def calculate_lst_chargeable(gross_pay):
+        if gross_pay > 10000000:
+            return 25000 + 0.3 * (gross_pay - 410000) + 0.1 * (gross_pay - 10000000)
+        elif gross_pay > 410000:
+            return 25000 + 0.3 * (gross_pay - 410000)
+        elif gross_pay > 335000:
+            return 10000 + 0.2 * (gross_pay - 335000)
+        elif gross_pay > 235000:
+            return 0.1 * (gross_pay - 235000)
+        else:
+            return 0
+
+    def calculate_paye(lst_chargeable):
+        return lst_chargeable
+
+    def calculate_nssf(basic_salary):
+        return 0.05 * basic_salary
+
+    def calculate_total_deductions(paye, nssf, lst):
+        return paye + nssf + lst
+
+    for i in range(num_employees):
+        st.subheader(f"Employee {i+1}")
+        name = st.text_input(f"Name {i+1}", key=f"name_{i}")
+        tin = st.text_input(f"TIN Number {i+1}", key=f"tin_{i}")
+        basic_salary = st.number_input(f"Basic Salary {i+1}", min_value=0, key=f"basic_{i}")
+        allowances = st.number_input(f"Allowances {i+1}", min_value=0, key=f"allow_{i}")
+        bonus = st.number_input(f"Bonus {i+1}", min_value=0, key=f"bonus_{i}")
+
+        gross_pay = basic_salary + allowances + bonus
+        lst_chargeable = calculate_lst_chargeable(gross_pay)
+        paye = calculate_paye(lst_chargeable)
+        nssf = calculate_nssf(basic_salary)
+        lst = lst_chargeable
+        total_deduction = calculate_total_deductions(paye, nssf, lst)
+        net_pay = gross_pay - total_deduction
+        take_home = net_pay
+
+        payroll_df = pd.concat([payroll_df, pd.DataFrame([{
+            "Name": name,
+            "TIN Number": tin,
+            "Basic Salary": basic_salary,
+            "Allowances": allowances,
+            "Bonus": bonus,
+            "Gross Pay": gross_pay,
+            "LST Chargeable Income": lst_chargeable,
+            "PAYE": paye,
+            "NSSF 5%": nssf,
+            "LST": lst,
+            "Total Deduction": total_deduction,
+            "Net Pay": net_pay,
+            "Take Home Pay": take_home
+        }])], ignore_index=True)
+
+    st.subheader("Payroll Summary")
+    st.dataframe(payroll_df.style.format({
+        "Basic Salary": "{:,.2f}",
+        "Allowances": "{:,.2f}",
+        "Bonus": "{:,.2f}",
+        "Gross Pay": "{:,.2f}",
+        "LST Chargeable Income": "{:,.2f}",
+        "PAYE": "{:,.2f}",
+        "NSSF 5%": "{:,.2f}",
+        "LST": "{:,.2f}",
+        "Total Deduction": "{:,.2f}",
+        "Net Pay": "{:,.2f}",
+        "Take Home Pay": "{:,.2f}"
+    }))
+
+    def to_excel(df):
+        output = BytesIO()
+        with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
+            df.to_excel(writer, index=False, sheet_name='Payroll')
+            workbook  = writer.book
+            worksheet = writer.sheets['Payroll']
+            money_fmt = workbook.add_format({'num_format': '#,##0.00'})
+            for col_num, value in enumerate(df.columns):
+                if col_num >= 2:
+                    worksheet.set_column(col_num, col_num, 15, money_fmt)
+                else:
+                    worksheet.set_column(col_num, col_num, 20)
+        processed_data = output.getvalue()
+        return processed_data
+
+    excel_data = to_excel(payroll_df)
+
+    st.download_button(
+        label="Download Payroll as Excel",
+        data=excel_data,
+        file_name="Payroll_XYZ_Co.xlsx",
+        mime="application/vnd.ms-excel"
+    )
+
+# ---------------- Tab 10: Withholding Tax (WHT) ----------------
+with tab10:
+    import pandas as pd
+    from io import BytesIO
+
+    st.header("Withholding Tax (WHT) - XYZ Co Ltd")
+    st.header("EAST Trainers TIN: 10000xxxx")
+    period = st.text_input("Period", value="MAY 2025")
+
+    st.subheader("International Payments")
+    intl_columns = ["Inv. Date", "Invoice No.", "Country", "TIN", "Supplier", "Description",
+                    "Currency", "Amount excl. WHT", "WHT Rate (%)", "WHT Amount", "URA Rate", "Amount Ushs", "WHT Ushs"]
+
+    intl_df = pd.DataFrame(columns=intl_columns)
+
+    num_intl = st.number_input("Number of International Payments", min_value=1, value=6)
+    for i in range(num_intl):
+        st.markdown(f"**International Payment {i+1}**")
+        inv_date = st.date_input(f"Invoice Date {i+1}", key=f"intl_date_{i}")
+        invoice_no = st.text_input(f"Invoice No {i+1}", key=f"intl_inv_{i}")
+        country = st.text_input(f"Country {i+1}", key=f"intl_country_{i}")
+        tin = st.text_input(f"TIN {i+1}", key=f"intl_tin_{i}")
+        supplier = st.text_input(f"Supplier {i+1}", key=f"intl_supplier_{i}")
+        description = st.text_input(f"Description {i+1}", key=f"intl_desc_{i}")
+        currency = st.selectbox(f"Currency {i+1}", ["USD", "EUR"], key=f"intl_cur_{i}")
+        amount = st.number_input(f"Amount excl. WHT {i+1}", min_value=0.0, key=f"intl_amount_{i}")
+        wht_rate = st.number_input(f"WHT Rate % {i+1}", min_value=0.0, value=15.0, key=f"intl_wht_rate_{i}")
+        ura_rate = st.number_input(f"URA Rate {i+1}", value=3651 if currency=="USD" else 4142, key=f"intl_ura_rate_{i}")
+
+        wht_amount = amount * (wht_rate / 100)
+        amount_ushs = amount * ura_rate
+        wht_ushs = wht_amount * ura_rate
+
+        intl_df = pd.concat([intl_df, pd.DataFrame([{
+            "Inv. Date": inv_date,
+            "Invoice No.": invoice_no,
+            "Country": country,
+            "TIN": tin,
+            "Supplier": supplier,
+            "Description": description,
+            "Currency": currency,
+            "Amount excl. WHT": amount,
+            "WHT Rate (%)": wht_rate,
+            "WHT Amount": wht_amount,
+            "URA Rate": ura_rate,
+            "Amount Ushs": amount_ushs,
+            "WHT Ushs": wht_ushs
+        }])], ignore_index=True)
+
+    st.dataframe(intl_df.style.format({
+        "Amount excl. WHT": "{:,.2f}",
+        "WHT Amount": "{:,.2f}",
+        "Amount Ushs": "{:,.2f}",
+        "WHT Ushs": "{:,.2f}"
+    }))
+
+    st.subheader("Local Payments")
+    local_columns = ["Inv. Date", "Invoice No.", "TIN", "Supplier", "Description",
+                     "Currency", "Amount excl. WHT", "WHT Rate (%)", "WHT Amount", "URA Rate", "Amount Ushs", "WHT Ushs"]
+    local_df = pd.DataFrame(columns=local_columns)
+
+    num_local = st.number_input("Number of Local Payments", min_value=1, value=4)
+    for i in range(num_local):
+        st.markdown(f"**Local Payment {i+1}**")
+        inv_date = st.date_input(f"Invoice Date {i+1}", key=f"loc_date_{i}")
+        invoice_no = st.text_input(f"Invoice No {i+1}", key=f"loc_inv_{i}")
+        tin = st.text_input(f"TIN {i+1}", key=f"loc_tin_{i}")
+        supplier = st.text_input(f"Supplier {i+1}", key=f"loc_supplier_{i}")
+        description = st.text_input(f"Description {i+1}", key=f"loc_desc_{i}")
+        currency = st.selectbox(f"Currency {i+1}", ["UGX", "USD", "EUR"], key=f"loc_cur_{i}")
+        amount = st.number_input(f"Amount excl. WHT {i+1}", min_value=0.0, key=f"loc_amount_{i}")
+        wht_rate = st.number_input(f"WHT Rate % {i+1}", min_value=0.0, value=6.0, key=f"loc_wht_rate_{i}")
+        ura_rate = st.number_input(f"URA Rate {i+1}", value=1 if currency=="UGX" else 3651, key=f"loc_ura_rate_{i}")
+
+        wht_amount = amount * (wht_rate / 100)
+        amount_ushs = amount * ura_rate
+        wht_ushs = wht_amount * ura_rate
+
+        local_df = pd.concat([local_df, pd.DataFrame([{
+            "Inv. Date": inv_date,
+            "Invoice No.": invoice_no,
+            "TIN": tin,
+            "Supplier": supplier,
+            "Description": description,
+            "Currency": currency,
+            "Amount excl. WHT": amount,
+            "WHT Rate (%)": wht_rate,
+            "WHT Amount": wht_amount,
+            "URA Rate": ura_rate,
+            "Amount Ushs": amount_ushs,
+            "WHT Ushs": wht_ushs
+        }])], ignore_index=True)
+
+    st.dataframe(local_df.style.format({
+        "Amount excl. WHT": "{:,.2f}",
+        "WHT Amount": "{:,.2f}",
+        "Amount Ushs": "{:,.2f}",
+        "WHT Ushs": "{:,.2f}"
+    }))
+
+    total_wht_payable = intl_df["WHT Ushs"].sum() + local_df["WHT Ushs"].sum()
+    st.subheader(f"TOTAL WHT PAYABLE: {total_wht_payable:,.0f} UGX")
+
+    def wht_to_excel(intl_df, local_df):
+        output = BytesIO()
+        with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
+            intl_df.to_excel(writer, index=False, sheet_name='International Payments')
+            local_df.to_excel(writer, index=False, sheet_name='Local Payments')
+            workbook  = writer.book
+            money_fmt = workbook.add_format({'num_format': '#,##0.00'})
+            for sheet_name in ['International Payments', 'Local Payments']:
+                worksheet = writer.sheets[sheet_name]
+                df = intl_df if sheet_name == 'International Payments' else local_df
+                for col_num, value in enumerate(df.columns):
+                    if col_num >= 7:
+                        worksheet.set_column(col_num, col_num, 15, money_fmt)
+                    else:
+                        worksheet.set_column(col_num, col_num, 20)
+        return output.getvalue()
+
+    excel_data = wht_to_excel(intl_df, local_df)
+    st.download_button(
+        label="Download WHT as Excel",
+        data=excel_data,
+        file_name="WHT_XYZ_Co.xlsx",
+        mime="application/vnd.ms-excel"
+    )
+
+# ---------------- Tab 11: Transfer Pricing ----------------
+with tab11:
+    import pandas as pd
+    import numpy as np
+    from io import BytesIO
+    from datetime import datetime
+
+    # ...Paste all your Transfer Pricing code here...
+    # At the end, call:
+    render_transfer_pricing_tab()
+
 # ----------------------------
 # Footer / App Info
 # ----------------------------
