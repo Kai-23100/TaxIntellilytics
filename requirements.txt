@@ -5,3 +5,7 @@ requests>=2.31
 streamlit-authenticator>=0.1.5
 openpyxl>=3.1
 xlsxwriter>=3.1
+streamlit
+SQLAlchemy
+pandas
+numpy
